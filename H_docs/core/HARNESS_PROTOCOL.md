@@ -111,18 +111,58 @@ Nếu gặp ≥ 2 lần liên tiếp:
 
 ---
 
-## 6. Multi-Agent Mode (Make Two Agents Argue)
+## 6. Dual-Model Mode (`--review-model`)
 
-Để tăng chất lượng output, có thể chạy chế độ 2 agent đối lập:
+Để khắc phục **confirmation bias** (cùng model vừa viết code vừa tự review), harness hỗ trợ chế độ 2 model:
+
+```bash
+# Kích hoạt Dual-Model Review
+./H_docs/harness.sh --review-model gemini-3.6-flash-low
+
+# Dual-Model với reviewer cao cấp hơn
+./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
+```
+
+### Flow mỗi iteration khi Dual-Model active
 
 ```
-Agent A (Builder)   → Viết code/solution
-Agent B (Critic)    → Đọc output của Agent A, tìm lỗi, đặt câu hỏi khó
-Agent A (Defender)  → Phản hồi critique, sửa nếu cần
-→ Kết quả sau N rounds → PROOF_OF_SOLUTION.md
+┌─ EXECUTOR (default model) ──────────────────────────────────┐
+│  Prompt A: ORIENT → PLAN → EXECUTE → VERIFY               │
+│  Chạy: python3 H_docs/scripts/verify.py                   │
+│  Dừng lại sau khi VERIFY PASS (không tự chạy Phase 5)     │
+└──────────────────────────────────────────────────────────────┘
+                │ VERIFY PASS
+                ▼
+┌─ REVIEWER (--review-model) ─────────────────────────────────┐
+│  Prompt B: git diff + VERIFICATION_REPORT + checklist      │
+│  Chạy: REVIEW_PROTOCOL.md Section 1 checklist             │
+│  Ghi kết quả vào: H_docs/runtime/DEBATE_LOG.md            │
+│  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
+└──────────────────────────────────────────────────────────────┘
+                │
+      ┌─────────┴───────────┐
+      ▼ APPROVED            ▼ REJECTED
+   Commit + next iter    Executor đọc DEBATE_LOG → fix → re-VERIFY
+                          (tối đa 2 lần retry/iter, sau đó continue)
 ```
 
-Tất cả rounds được log trong `H_docs/runtime/DEBATE_LOG.md`.
+### Giá trị model hợp lệ
+
+Chạy `agy models` để xem danh sách. Ví dụ:
+- `gemini-3.6-flash-low` — rẻ nhất, đủ để review logic (khuyến nghị mặc định)
+- `gemini-3.5-flash-medium` — cân bằng cost/quality
+- `claude-sonnet-4-6` — reviewer chất lượng cao nhất cho task phức tạp
+
+### State machine khi Dual-Model
+
+| Trạng thái | Model | Action |
+|-----------|-------|--------|
+| `EXECUTING` | Executor | PHASE 0-4, runs verify.py |
+| `REVIEWING` | Reviewer (khác) | PHASE 5, reads git diff only |
+| `REVIEW_REJECTED` | Executor | Fix based on DEBATE_LOG, re-verify |
+| `COMMITTING` | Executor | Atomic git commits |
+
+> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Phase 5 do executor tự thực hiện.
 
 ---
 

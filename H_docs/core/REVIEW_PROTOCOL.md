@@ -77,32 +77,72 @@ Ghi từng câu hỏi và câu trả lời vào DEBATE_LOG.md.
 
 ---
 
-## 3. Inter-Agent Review (Multi-Agent Debate)
+## 3. Dual-Model Review (harness.sh `--review-model` mode)
 
-Khi task quan trọng hoặc phức tạp, sử dụng 2-agent review:
+Khi chạy harness với `--review-model MODEL`, Phase 5 được thực thi bởi **một model khác** với executor — loại bỏ confirmation bias hoàn toàn.
 
-### Cách setup
+### Cách harness điều phối
 
-**Agent A — Builder (Người xây dựng):**
+```
+Executor (default model) → EXECUTE + VERIFY (Phase 0–4) → commit intermediate
+           ↓ VERIFY PASS
+Reviewer (--review-model) → đọc git diff + VERIFICATION_REPORT.md → DEBATE_LOG.md
+           ↓
+   APPROVED → harness tiếp tục iteration kế
+   REJECTED → Executor nhận feedback từ DEBATE_LOG → fix → re-VERIFY → Reviewer lại
+              (tối đa 2 lần retry/iteration)
+```
+
+### Input của Reviewer Model
+Reviewer **chỉ được cung cấp** (token-efficient):
+1. `git diff HEAD~1 HEAD` — các thay đổi cụ thể
+2. Summary 1 dòng từ `python3 H_docs/scripts/verify.py --summary`
+3. `H_docs/runtime/VERIFICATION_REPORT.md` — nếu cần xem chi tiết lỗi Tier 1
+4. Checklist từ `H_docs/core/REVIEW_PROTOCOL.md` Section 1
+
+Reviewer **KHÔNG đọc lại** toàn bộ codebase → tiết kiệm token.
+
+### Output bắt buộc của Reviewer
+Dòng cuối cùng trong `DEBATE_LOG.md` PHẢI là một trong:
+```
+Review Result: APPROVED
+Review Result: REJECTED: <lý do cụ thể, tối đa 5 dòng>
+```
+
+### Kích hoạt Dual-Model Review
+```bash
+# Review bằng model rẻ hơn, góc nhìn khác
+./H_docs/harness.sh --review-model gemini-3.6-flash-low
+
+# Review bằng model cao cấp hơn cho task quan trọng
+./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
+```
+
+### Manual Dual-Model (không dùng harness)
+
+Để chạy 2-agent debate thủ công cho task phức tạp:
+
+**Agent A — Builder (Executor):**
 ```
 Prompt: "Bạn vừa hoàn thành [task]. Đây là output của bạn: [output]. 
 Hãy giải thích từng quyết định thiết kế bạn đưa ra."
 ```
 
-**Agent B — Critic (Người phản biện):**
+**Agent B — Critic (Reviewer model khác):**
 ```
 Prompt: "Đây là output của một engineer: [output từ Agent A].
 Nhiệm vụ của bạn là tìm MỌI vấn đề có thể có. Không giữ lại bất kỳ phê bình nào.
-Đặt tối thiểu 5 câu hỏi khó về giải pháp này."
+Đặt tối thiểu 5 câu hỏi khó về giải pháp này.
+Output cuối: 'Review Result: APPROVED' hoặc 'Review Result: REJECTED: <lý do>'"
 ```
 
-**Agent A — Defender (Người phản hồi):**
+**Agent A — Defender (Executor nhận feedback):**
 ```
-Prompt: "Đây là phê bình về work của bạn: [critique từ Agent B].
+Prompt: "Đây là phê bình về work của bạn từ DEBATE_LOG.md: [critique].
 Với mỗi điểm phê bình: (1) Đồng ý hay không đồng ý? (2) Lý do? (3) Action cụ thể nếu đồng ý."
 ```
 
-### Số rounds
+### Số rounds (manual mode)
 - **Task nhỏ**: 1 round (Builder → Critic → Defender)
 - **Task trung bình**: 2 rounds
 - **Task quan trọng**: 3 rounds hoặc đến khi không còn critique mới
