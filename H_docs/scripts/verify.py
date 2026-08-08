@@ -3,8 +3,14 @@
 verify.py — Deterministic Quality Verification Engine for Ralph Loop
 Chạy các công cụ tĩnh (Static Analysis) và Runtime Test, tự động cắt tỉa log
 để tối ưu token và cung cấp phản hồi khách quan 100% cho AI Coder.
+
+Usage:
+  python3 H_docs/scripts/verify.py              # Full report → VERIFICATION_REPORT.md
+  python3 H_docs/scripts/verify.py --summary    # 1-line token-efficient summary (stdout only)
 """
 
+import argparse
+import datetime
 import os
 import shutil
 import subprocess
@@ -153,16 +159,40 @@ def run_python_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Tier 1 Deterministic Verification Engine for Ralph Loop"
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print a single-line token-efficient summary to stdout only (no file write)",
+    )
+    args = parser.parse_args()
+
+    check_results = run_python_checks(".")
+    all_passed = all(r[1] for r in check_results)
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # ── Summary mode: 1-line output for reviewer model prompt injection ──────
+    if args.summary:
+        failed = [name for name, passed, _ in check_results if not passed]
+        if all_passed:
+            print(f"TIER1: PASS ({now}) — Ruff/Mypy/Bandit/Pytest all green ✅")
+        else:
+            fail_str = ", ".join(failed)
+            print(f"TIER1: FAIL ({now}) — Failed checks: {fail_str} ❌")
+        sys.exit(0 if all_passed else 1)
+
+    # ── Full mode: write VERIFICATION_REPORT.md ──────────────────────────────
     report_path = Path("H_docs/runtime/VERIFICATION_REPORT.md")
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     print("🔍 Running Tier 1 Deterministic Verification Checks...")
-    check_results = run_python_checks(".")
 
-    all_passed = True
     report_lines = [
         "# TIER 1 VERIFICATION REPORT",
-        f"Status: {'PASS' if all(r[1] for r in check_results) else 'FAIL'}",
+        f"Generated: {now}",
+        f"Status: {'PASS' if all_passed else 'FAIL'}",
         "",
         "## Summary",
     ]
@@ -170,8 +200,6 @@ def main():
     for name, passed, detail in check_results:
         status_str = "✅ PASS" if passed else "❌ FAIL"
         report_lines.append(f"- **{name}**: {status_str}")
-        if not passed:
-            all_passed = False
 
     report_lines.append("\n## Details & Error Truncated Logs\n")
     for name, passed, detail in check_results:
