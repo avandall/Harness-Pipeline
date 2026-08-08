@@ -4,10 +4,11 @@
 # Chạy AI agent trong một vòng lặp tự trị với đầy đủ guardrails
 #
 # Cách dùng:
-#   ./harness.sh                      # Chạy với defaults
-#   ./harness.sh --max-iter 20        # Giới hạn 20 iterations
-#   ./harness.sh --task "TASK-001"    # Chỉ định task ID
-#   ./harness.sh --dry-run            # Simulate, không thực thi thực sự
+#   ./harness.sh                               # Chạy với defaults (single-model)
+#   ./harness.sh --max-iter 20                 # Giới hạn 20 iterations
+#   ./harness.sh --task "TASK-001"             # Chỉ định task ID
+#   ./harness.sh --dry-run                     # Simulate, không thực thi thực sự
+#   ./harness.sh --review-model gemini-3.6-flash-low  # Bật Dual-Model mode
 # =============================================================================
 
 set -euo pipefail
@@ -29,6 +30,13 @@ PRINT_TIMEOUT="15m0s"
 DRY_RUN=false
 VERBOSE=false
 STOP_ON_BLOCK=false
+
+# Dual-Model Review Mode
+# Set REVIEW_MODEL to enable: executor writes code, reviewer (different model) checks logic
+# Default empty = single-model mode (backward compatible)
+REVIEW_MODEL=""
+REVIEW_TIMEOUT="5m0s"   # Reviewer is faster — only reads git diff + checklist
+REVIEW_MAX_RETRIES=2    # Max re-execute cycles per iteration when reviewer rejects
 
 # Colors
 RED='\033[0;31m'
@@ -57,6 +65,14 @@ parse_args() {
         PRINT_TIMEOUT="$2"
         shift 2
         ;;
+      --review-model|-r)
+        REVIEW_MODEL="$2"
+        shift 2
+        ;;
+      --review-timeout)
+        REVIEW_TIMEOUT="$2"
+        shift 2
+        ;;
       --stop-on-block)
         STOP_ON_BLOCK=true
         shift
@@ -83,26 +99,39 @@ parse_args() {
 }
 
 show_help() {
-  cat << EOF
+  cat <<EOF
 ${BOLD}harness.sh${NC} — Ralph Loop Execution Script (Overnight Non-Blocking Mode)
 
 ${BOLD}USAGE:${NC}
   ./harness.sh [OPTIONS]
 
 ${BOLD}OPTIONS:${NC}
-  --max-iter, -n N    Maximum number of iterations (default: 30)
-  --task, -t ID       Task ID to run (default: reads from Tasks_list.md)
-  --timeout TIME      Timeout for AI process wait e.g. 10m0s, 15m0s (default: 15m0s)
-  --stop-on-block     Stop harness immediately if any task is blocked (default: false / Overnight Mode)
-  --dry-run, -d       Simulate without executing
-  --verbose, -v       Verbose output
-  --help, -h          Show this help
+  --max-iter, -n N        Maximum number of iterations (default: 30)
+  --task, -t ID           Task ID to run (default: reads from Tasks_list.md)
+  --timeout TIME          Timeout for AI executor process e.g. 10m0s, 15m0s (default: 15m0s)
+  --review-model, -r M    Enable Dual-Model mode: use model M for Tier 2 Cognitive Review.
+                          M must be a valid agy model name (run: agy models).
+                          Example: --review-model gemini-3.6-flash-low
+                          When not set: single-model mode (backward compatible).
+  --review-timeout TIME   Timeout for reviewer agy call (default: 5m0s)
+  --stop-on-block         Stop harness immediately if any task is blocked (default: false / Overnight Mode)
+  --dry-run, -d           Simulate without executing
+  --verbose, -v           Verbose output
+  --help, -h              Show this help
+
+${BOLD}DUAL-MODEL MODE:${NC}
+  When --review-model is set, each iteration runs two agy calls:
+    1. EXECUTOR (default model)  — ORIENT → EXECUTE → VERIFY (runs verify.py)
+    2. REVIEWER (--review-model) — PHASE 5 Cognitive Review on git diff
+  If REVIEWER rejects, EXECUTOR gets feedback from DEBATE_LOG.md and retries
+  (max ${REVIEW_MAX_RETRIES:-2} times per iteration).
 
 ${BOLD}EXAMPLES:${NC}
-  ./harness.sh                    # Run in Overnight Non-Blocking mode (15m timeout)
-  ./harness.sh --timeout 20m0s   # Increase timeout to 20 minutes
-  ./harness.sh --max-iter 50     # Limit to 50 iterations
-  ./harness.sh --stop-on-block   # Strict mode: stop on first blocker
+  ./harness.sh                                  # Single-model mode (classic)
+  ./harness.sh --review-model gemini-3.6-flash-low  # Dual-model review
+  ./harness.sh --timeout 20m0s                  # Increase timeout to 20 minutes
+  ./harness.sh --max-iter 50                    # Limit to 50 iterations
+  ./harness.sh --stop-on-block                  # Strict mode: stop on first blocker
 
 ${BOLD}DOCS:${NC}
   See H_docs/core/HARNESS_PROTOCOL.md for full documentation.
@@ -388,6 +417,11 @@ main() {
   log_info "Max iterations: ${MAX_ITERATIONS}"
   log_info "Context refresh: every ${CONTEXT_REFRESH_EVERY} iterations"
   log_info "Overnight Mode: ACTIVE (Blocked tasks will be bypassed)"
+  if [[ -n "$REVIEW_MODEL" ]]; then
+    log_info "Review Mode: DUAL-MODEL — Reviewer=${REVIEW_MODEL} (max ${REVIEW_MAX_RETRIES} retries/iter)"
+  else
+    log_info "Review Mode: SINGLE-MODEL (self-review by executor)"
+  fi
   if $DRY_RUN; then
     log_warn "DRY RUN MODE — no real changes will be made"
   fi
