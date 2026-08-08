@@ -112,7 +112,8 @@ ${BOLD}OPTIONS:${NC}
   --review-model, -r M    Enable Dual-Model mode: use model M for Tier 2 Cognitive Review.
                           M must be a valid agy model name (run: agy models).
                           Example: --review-model gemini-3.6-flash-low
-                          When not set: single-model mode (backward compatible).
+                          IMPORTANT: You MUST specify a model name explicitly.
+                          No default model is assumed — omitting -r uses single-model mode.
   --review-timeout TIME   Timeout for reviewer agy call (default: 5m0s)
   --stop-on-block         Stop harness immediately if any task is blocked (default: false / Overnight Mode)
   --dry-run, -d           Simulate without executing
@@ -121,17 +122,33 @@ ${BOLD}OPTIONS:${NC}
 
 ${BOLD}DUAL-MODEL MODE:${NC}
   When --review-model is set, each iteration runs two agy calls:
-    1. EXECUTOR (default model)  — ORIENT → EXECUTE → VERIFY (runs verify.py)
-    2. REVIEWER (--review-model) — PHASE 5 Cognitive Review on git diff
-  If REVIEWER rejects, EXECUTOR gets feedback from DEBATE_LOG.md and retries
-  (max ${REVIEW_MAX_RETRIES:-2} times per iteration).
+    1. EXECUTOR (default model)  — ORIENT → PLAN → EXECUTE → VERIFY (runs verify.py)
+                                   Stops before Phase 5 (Review). Phase 6-7 (Commit/Report)
+                                   run AFTER reviewer approves.
+    2. REVIEWER (--review-model) — Phase 5 Cognitive Review using git diff + verify.py summary.
+                                   Reads prompt from H_docs/core/REVIEWER_PROMPT_TEMPLATE.md.
+                                   Output: 'Review Result: APPROVED' or 'Review Result: REJECTED: <reason>'
+  If REVIEWER rejects:
+    - EXECUTOR reads DEBATE_LOG.md, fixes issues, re-runs verify.py, then REVIEWER checks again.
+    - Max ${REVIEW_MAX_RETRIES:-2} retry cycles per iteration.
+  If REVIEWER rejects after max retries:
+    - Task is marked [!] BLOCKED (same as Overnight Non-Blocking blocker behavior).
+    - Harness continues to next TODO task automatically.
+  The reviewer call is a FRESH agy conversation (separate context, same CLI quota).
 
 ${BOLD}EXAMPLES:${NC}
   ./harness.sh                                  # Single-model mode (classic)
-  ./harness.sh --review-model gemini-3.6-flash-low  # Dual-model review
-  ./harness.sh --timeout 20m0s                  # Increase timeout to 20 minutes
+  ./harness.sh --review-model gemini-3.6-flash-low  # Dual-model: cheap flash reviewer
+  ./harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s  # Premium reviewer
+  ./harness.sh --timeout 20m0s                  # Increase executor timeout
   ./harness.sh --max-iter 50                    # Limit to 50 iterations
   ./harness.sh --stop-on-block                  # Strict mode: stop on first blocker
+
+${BOLD}REVIEWER PROMPT CUSTOMIZATION:${NC}
+  Edit H_docs/core/REVIEWER_PROMPT_TEMPLATE.md to customize:
+  - Review checklist focus areas
+  - Project-specific rules (SQL injection checks, API conventions, etc.)
+  - Output format requirements
 
 ${BOLD}DOCS:${NC}
   See H_docs/core/HARNESS_PROTOCOL.md for full documentation.
@@ -345,7 +362,7 @@ checkpoint_commit() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Execute one iteration (hook point for actual AI execution)
+# Execute one iteration — dispatcher routes to single-model or dual-model
 # ────────────────────────────────────────────────────────────────────────────
 execute_iteration() {
   local iter="$1"
@@ -358,40 +375,267 @@ execute_iteration() {
   fi
 
   if $DRY_RUN; then
-    log_info "[DRY RUN] Simulating iteration ${iter}..."
+    log_info "[DRY RUN] Simulating iteration ${iter} (mode: $([ -n "$REVIEW_MODEL" ] && echo 'dual-model' || echo 'single-model'))..."
     sleep 1
     return 0
   fi
 
+  if [[ -n "$REVIEW_MODEL" ]]; then
+    execute_iteration_dual_model "$iter"
+  else
+    execute_iteration_single_model "$iter"
+  fi
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Single-model iteration (classic mode — backward compatible, unchanged)
+# ────────────────────────────────────────────────────────────────────────────
+execute_iteration_single_model() {
+  local iter="$1"
+
   # ─── AUTOMATED AGY CLI EXECUTION ─────────────────────────────────────────
   local iter_prompt="Đọc H_docs/core/AGENT_CONSTITUTION.md, H_docs/context/Tasks_list.md và H_docs/runtime/STATUS.md. Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md. Đọc H_docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md). Thực hiện 1 bước atomic tiếp theo trong task đó theo quy trình Harness Protocol. Ở Phase 4 (VERIFY), BẮT BUỘC chạy 'python3 H_docs/scripts/verify.py' để kiểm định Tier 1 (Linter/Type/Security/Test) và kiểm tra H_docs/runtime/VERIFICATION_REPORT.md. NẾU VERIFICATION_REPORT có lỗi, hãy đọc log ngắn gọn trong đó để sửa ngay. Ở Phase 5 (REVIEW), thực hiện Tier 2 Cognitive Review dựa trên git diff và H_docs/core/REVIEW_PROTOCOL.md. Cập nhật H_docs/runtime/STATUS.md, H_docs/runtime/PROGRESS_LOG.md và tự thực hiện atomic git commits nhỏ. NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào file H_docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật dòng của task đó trong H_docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo. KHÔNG TẠO file BLOCKED.md ở root ngoại trừ khi khẩn cấp. LƯU Ý QUAN TRỌNG: Chỉ được phép ghi 'Phase: ALL_DONE' vào H_docs/runtime/STATUS.md KHI VÀ CHỈ KHI TẤT CẢ các tasks trong Tasks_list.md đã được thực hiện, phản biện, xác minh pass 100% và đánh dấu [x] DONE (hoặc [!] BLOCKED). Khi đó mới cập nhật STATUS.md thành Phase: ALL_DONE và viết H_docs/runtime/PROOF_OF_SOLUTION.md. Nếu dự án còn task chưa hoàn thành, giữ Phase: IN_PROGRESS."
 
-  log_info "Launching agy CLI process for Iteration ${iter}..."
+  log_info "[SINGLE-MODEL] Launching agy for Iteration ${iter}..."
+  _run_agy_with_retry "$iter_prompt" "$PRINT_TIMEOUT" "$iter"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Shared helper: run agy with retry logic (used by both single and dual mode)
+# ────────────────────────────────────────────────────────────────────────────
+_run_agy_with_retry() {
+  local prompt="$1"
+  local timeout="$2"
+  local iter="$3"
+  local model_flag="${4:-}"  # Optional: "--model MODEL_NAME" for reviewer calls
 
   local max_retries=3
   local attempt=1
   local success=false
 
   while (( attempt <= max_retries )); do
-    if agy -p "$iter_prompt" --dangerously-skip-permissions --print-timeout "$PRINT_TIMEOUT"; then
-      log_ok "agy CLI process finished Iteration ${iter} successfully."
-      success=true
-      break
-    else
-      log_warn "agy CLI process attempt ${attempt}/${max_retries} failed or timed out."
-      if (( attempt < max_retries )); then
-        log_info "Waiting 5 seconds before retrying..."
-        sleep 5
+    local agy_cmd="agy"
+    if [[ -n "$model_flag" ]]; then
+      # shellcheck disable=SC2086  # Intentional word splitting for model flag
+      if $agy_cmd $model_flag -p "$prompt" --dangerously-skip-permissions --print-timeout "$timeout"; then
+        success=true; break
       fi
-      ((attempt++))
+    else
+      if $agy_cmd -p "$prompt" --dangerously-skip-permissions --print-timeout "$timeout"; then
+        success=true; break
+      fi
     fi
+    log_warn "agy attempt ${attempt}/${max_retries} failed or timed out (iter ${iter})."
+    if (( attempt < max_retries )); then log_info "Retrying in 5 seconds..."; sleep 5; fi
+    ((attempt++))
   done
 
   if [[ "$success" == true ]]; then
     return 0
   else
-    log_error "agy CLI process failed after ${max_retries} attempts on Iteration ${iter}."
+    log_error "agy failed after ${max_retries} attempts (iter ${iter})."
     return 1
+  fi
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Build reviewer prompt by reading REVIEWER_PROMPT_TEMPLATE.md
+# and substituting {{PLACEHOLDER}} tokens
+# ────────────────────────────────────────────────────────────────────────────
+_build_reviewer_prompt() {
+  local iter="$1"
+  local tier1_summary="$2"
+  local git_diff="$3"
+  local template_file="${CORE_DIR}/REVIEWER_PROMPT_TEMPLATE.md"
+  local debate_log_path="${RUNTIME_DIR}/DEBATE_LOG.md"
+
+  if [[ ! -f "$template_file" ]]; then
+    log_error "REVIEWER_PROMPT_TEMPLATE.md not found at ${template_file}"
+    log_error "Create it or copy from boilerplate. See H_docs/core/HARNESS_PROTOCOL.md Section 6."
+    return 1
+  fi
+
+  # Extract only the content between ---PROMPT_START--- and ---PROMPT_END---
+  local raw_prompt
+  raw_prompt=$(sed -n '/^---PROMPT_START---$/,/^---PROMPT_END---$/{ /^---PROMPT_START---$/d; /^---PROMPT_END---$/d; p }' "$template_file")
+
+  # Extract Project-Specific Review Rules section (everything after the section header)
+  local project_rules
+  project_rules=$(awk '/^## Project-Specific Review Rules/{found=1; next} found && /^<!--/{next} found && /^-->/{next} found{print}' "$template_file" | grep -v '^$' | grep -v '^<!--' | grep -v '^-->' || true)
+
+  # Substitute placeholders
+  local prompt="$raw_prompt"
+  prompt="${prompt//\{\{ITERATION\}\}/${iter}}"
+  prompt="${prompt//\{\{TIER1_SUMMARY\}\}/${tier1_summary}}"
+  prompt="${prompt//\{\{GIT_DIFF\}\}/${git_diff}}"
+  prompt="${prompt//\{\{DEBATE_LOG_PATH\}\}/${debate_log_path}}"
+
+  # Append project-specific rules if any exist
+  if [[ -n "$project_rules" ]]; then
+    prompt="${prompt}
+
+## Project-Specific Review Rules (from REVIEWER_PROMPT_TEMPLATE.md)
+${project_rules}"
+  fi
+
+  echo "$prompt"
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Dual-model iteration:
+#   1. Executor (default model): ORIENT → PLAN → EXECUTE → VERIFY (Phase 0-4)
+#      Then COMMIT + REPORT after reviewer approves (Phase 6-7)
+#   2. Reviewer (REVIEW_MODEL): Phase 5 Cognitive Review on git diff
+#   3. Retry loop: on REJECTED, executor fixes + re-verify, reviewer re-checks
+#   4. Max retries exceeded: mark task BLOCKED, continue to next task
+# ────────────────────────────────────────────────────────────────────────────
+execute_iteration_dual_model() {
+  local iter="$1"
+
+  # ── STEP 1: Executor — Phase 0 (ORIENT) → Phase 4 (VERIFY) ───────────────
+  # Explicitly instructs executor to STOP before Phase 5 (Review).
+  # Phase 5 is handled by the reviewer model below.
+  # Phase 6 (Commit) and Phase 7 (Report) will be done after APPROVED.
+  local executor_prompt="[DUAL-MODEL MODE — EXECUTOR ROLE]
+
+Đọc H_docs/core/AGENT_CONSTITUTION.md, H_docs/context/Tasks_list.md và H_docs/runtime/STATUS.md.
+Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md.
+Đọc H_docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md).
+
+Thực hiện các Phase sau theo H_docs/core/WORKFLOW_STANDARDS.md:
+  - PHASE 0 (ORIENT): Đọc context docs.
+  - PHASE 1 (SPEC): Xác định acceptance criteria nếu chưa có.
+  - PHASE 2 (PLAN): Chia bước nếu chưa có PLAN.md.
+  - PHASE 3 (EXECUTE): Thực thi 1 bước atomic tiếp theo.
+  - PHASE 4 (VERIFY): BẮT BUỘC chạy 'python3 H_docs/scripts/verify.py'.
+    Nếu VERIFICATION_REPORT.md có lỗi → sửa ngay và chạy lại verify.py cho đến khi PASS.
+
+⚠️ DỪNG LẠI SAU PHASE 4 — KHÔNG tự thực hiện Phase 5 (Review), Phase 6 (Commit), hay Phase 7 (Report).
+Phase 5 sẽ được thực hiện bởi một Reviewer Model độc lập.
+Phase 6 và 7 sẽ được thực hiện sau khi Reviewer phê duyệt.
+
+NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào H_docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật task đó trong H_docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo.
+
+LƯU Ý: Chỉ ghi 'Phase: ALL_DONE' vào STATUS.md khi TẤT CẢ tasks đã pass và marked [x] DONE hoặc [!] BLOCKED. Nếu còn tasks chưa xong, giữ Phase: IN_PROGRESS."
+
+  log_info "[DUAL-MODEL] Step 1/2 — Launching EXECUTOR (Phase 0→4)..."
+  if ! _run_agy_with_retry "$executor_prompt" "$PRINT_TIMEOUT" "$iter"; then
+    log_error "[DUAL-MODEL] Executor failed on Iteration ${iter}. Skipping reviewer."
+    return 1
+  fi
+  log_ok "[DUAL-MODEL] Executor Phase 0→4 complete."
+
+  # ── STEP 2: Collect context for reviewer (token-efficient) ────────────────
+  local tier1_summary
+  tier1_summary=$(python3 H_docs/scripts/verify.py --summary 2>/dev/null \
+    || echo "TIER1: UNKNOWN (verify.py failed to run)")
+
+  # Cap git diff at ~400 lines to control token cost while covering most atomic commits
+  local git_diff
+  git_diff=$(git diff HEAD~1 HEAD 2>/dev/null | head -n 400 \
+    || echo "(no diff available — possibly first commit or git error)")
+
+  # ── STEP 3: Reviewer loop (max REVIEW_MAX_RETRIES) ───────────────────────
+  local review_attempt=0
+  local review_approved=false
+
+  while (( review_attempt < REVIEW_MAX_RETRIES )); do
+    (( review_attempt++ ))
+    log_info "[DUAL-MODEL] Step 2/2 — Launching REVIEWER model '${REVIEW_MODEL}' (attempt ${review_attempt}/${REVIEW_MAX_RETRIES})..."
+
+    # Build reviewer prompt from template
+    local reviewer_prompt
+    if ! reviewer_prompt=$(_build_reviewer_prompt "$iter" "$tier1_summary" "$git_diff"); then
+      log_error "Failed to build reviewer prompt. Falling back to single-model self-review."
+      break
+    fi
+
+    # Run reviewer as fresh agy conversation with specified model
+    if ! _run_agy_with_retry "$reviewer_prompt" "$REVIEW_TIMEOUT" "$iter" "--model ${REVIEW_MODEL}"; then
+      log_warn "[DUAL-MODEL] Reviewer model call failed/timed out on attempt ${review_attempt}."
+      continue
+    fi
+
+    # Parse review result from DEBATE_LOG.md
+    local debate_log="${RUNTIME_DIR}/DEBATE_LOG.md"
+    if [[ -f "$debate_log" ]] && grep -q "Review Result: APPROVED" "$debate_log" 2>/dev/null; then
+      # Check that APPROVED is in the LAST review entry (not an older one)
+      local last_result
+      last_result=$(grep "Review Result:" "$debate_log" | tail -1)
+      if [[ "$last_result" == *"APPROVED"* ]]; then
+        log_ok "[DUAL-MODEL] Reviewer APPROVED! Proceeding to Phase 6 (Commit) + Phase 7 (Report)."
+        review_approved=true
+        break
+      fi
+    fi
+
+    # REJECTED — extract reason and send back to executor for fix
+    local rejection_reason
+    rejection_reason=$(grep "Review Result: REJECTED" "${RUNTIME_DIR}/DEBATE_LOG.md" 2>/dev/null | tail -1 \
+      || echo "Reviewer rejected without specifying reason. See DEBATE_LOG.md.")
+    log_warn "[DUAL-MODEL] Reviewer REJECTED (attempt ${review_attempt}): ${rejection_reason}"
+
+    if (( review_attempt < REVIEW_MAX_RETRIES )); then
+      log_info "[DUAL-MODEL] Sending rejection feedback to executor for fix + re-verify..."
+      local fix_prompt="[DUAL-MODEL MODE — EXECUTOR FIX ROLE]
+
+Từ chối review lần ${review_attempt}/${REVIEW_MAX_RETRIES}. Lý do từ Reviewer:
+${rejection_reason}
+
+Đọc đầy đủ H_docs/runtime/DEBATE_LOG.md để hiểu tất cả issues được nêu ra.
+Sửa các vấn đề được chỉ ra (ưu tiên CRITICAL và HIGH trước).
+Sau khi sửa, BẮT BUỘC chạy lại 'python3 H_docs/scripts/verify.py' và đảm bảo PASS.
+
+⚠️ DỪNG SAU PHASE 4 — KHÔNG tự làm Phase 5 (Review). Reviewer sẽ kiểm tra lại."
+      if ! _run_agy_with_retry "$fix_prompt" "$PRINT_TIMEOUT" "$iter"; then
+        log_warn "[DUAL-MODEL] Executor fix attempt failed."
+      fi
+      # Refresh git diff after fix
+      git_diff=$(git diff HEAD~1 HEAD 2>/dev/null | head -n 400 \
+        || echo "(no diff available)")
+      tier1_summary=$(python3 H_docs/scripts/verify.py --summary 2>/dev/null \
+        || echo "TIER1: UNKNOWN")
+    fi
+  done
+
+  # ── STEP 4: Handle final outcome ──────────────────────────────────────────
+  if [[ "$review_approved" == true ]]; then
+    # ── APPROVED: Executor runs Phase 6 (Commit) + Phase 7 (Report) ─────────
+    log_info "[DUAL-MODEL] Running Phase 6 (Commit) + Phase 7 (Report) after approval..."
+    local commit_prompt="[DUAL-MODEL MODE — COMMIT & REPORT ROLE]
+
+Reviewer đã phê duyệt code (xem H_docs/runtime/DEBATE_LOG.md).
+Thực hiện Phase 6 và Phase 7 theo H_docs/core/WORKFLOW_STANDARDS.md:
+  - PHASE 6 (COMMIT): Tạo atomic git commits nhỏ với message format [iter-${iter}] <type>(<scope>): <desc>
+  - PHASE 7 (REPORT): Cập nhật PROGRESS_LOG.md, STATUS.md, đánh dấu step trong PLAN.md và Tasks_list.md.
+
+LƯU Ý: Chỉ ghi 'Phase: ALL_DONE' vào STATUS.md khi TẤT CẢ tasks đã pass 100% và marked [x] DONE hoặc [!] BLOCKED."
+    _run_agy_with_retry "$commit_prompt" "5m0s" "$iter" || \
+      log_warn "[DUAL-MODEL] Phase 6-7 executor call failed. Manual commit may be needed."
+    return 0
+  else
+    # ── MAX RETRIES EXCEEDED: Mark task BLOCKED, continue to next ────────────
+    log_warn "[DUAL-MODEL] Reviewer rejected ${REVIEW_MAX_RETRIES} times. Marking task as BLOCKED."
+    log_info "[DUAL-MODEL] Instructing executor to write blocker report and move to next task..."
+    local blocked_prompt="[DUAL-MODEL MODE — BLOCKER HANDLING]
+
+O Dual-Model Review: Reviewer đã từ chối code ${REVIEW_MAX_RETRIES} lần liên tiếp trong Iteration ${iter}.
+Xem chi tiết lý do trong H_docs/runtime/DEBATE_LOG.md.
+
+Thực hiện Overnight Non-Blocking BLOCKED protocol:
+1. Đọc task hiện tại đang [/] IN_PROGRESS trong H_docs/context/Tasks_list.md.
+2. Tạo report chi tiết tại H_docs/runtime/BLOCKERS/<TASK_ID>.md với:
+   - Lý do: Reviewer liên tục rejected sau ${REVIEW_MAX_RETRIES} lần retry.
+   - Các issues: [tóm tắt từ DEBATE_LOG.md]
+   - Action cần thiết từ human: [mô tả cụ thể]
+3. Cập nhật dòng task đó trong Tasks_list.md thành [!] BLOCKED.
+4. Cập nhật STATUS.md để giải phóng task này.
+5. Tự động chọn task [ ] TODO tiếp theo trong Tasks_list.md để tiếp tục.
+
+KHÔNG tạo BLOCKED.md ở root."
+    _run_agy_with_retry "$blocked_prompt" "5m0s" "$iter" || \
+      log_warn "[DUAL-MODEL] Blocker handling call failed. Check DEBATE_LOG.md manually."
+    return 0  # Return 0 so harness continues to next iteration (Overnight Non-Blocking)
   fi
 }
 

@@ -123,19 +123,69 @@ Nếu gặp ≥ 2 lần liên tiếp:
 ./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
 ```
 
+> ⚠️ **Bắt buộc chỉ định tên model:** Không có model mặc định. Bỏ qua `--review-model` = single-model mode.
+
 ### Flow mỗi iteration khi Dual-Model active
 
 ```
 ┌─ EXECUTOR (default model) ──────────────────────────────────┐
-│  Prompt A: ORIENT → PLAN → EXECUTE → VERIFY               │
+│  Prompt A: ORIENT → SPEC → PLAN → EXECUTE → VERIFY        │
 │  Chạy: python3 H_docs/scripts/verify.py                   │
-│  Dừng lại sau khi VERIFY PASS (không tự chạy Phase 5)     │
-└──────────────────────────────────────────────────────────────┘
+│  ⚠️ DỪNG sau PHASE 4 — KHÔNG tự chạy Phase 5, 6, 7       │
+└─────────────────────────────────────────────────────────────┘
                 │ VERIFY PASS
                 ▼
 ┌─ REVIEWER (--review-model) ─────────────────────────────────┐
-│  Prompt B: git diff + VERIFICATION_REPORT + checklist      │
-│  Chạy: REVIEW_PROTOCOL.md Section 1 checklist             │
+│  Prompt B: đọc từ REVIEWER_PROMPT_TEMPLATE.md             │
+│  Nhận: git diff (≤400 dòng) + verify.py --summary         │
+│  Ghi kết quả vào: H_docs/runtime/DEBATE_LOG.md            │
+│  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
+│  Đây là cuộc hội thoại agy MỚI HOÀN TOÀN (fresh context) │
+└─────────────────────────────────────────────────────────────┘
+                │
+      ┌─────────┴──────────────┐
+      ▼ APPROVED               ▼ REJECTED
+   Executor chạy            Executor đọc DEBATE_LOG → fix → re-VERIFY
+   Phase 6+7 (Commit+Report) Reviewer kiểm tra lại
+                             (tối đa REVIEW_MAX_RETRIES lần)
+                                      │
+                             Vẫn REJECTED sau max retries?
+                                      ▼
+                             Executor ghi BLOCKERS/<TASK_ID>.md
+                             Task → [!] BLOCKED
+                             Tự động chuyển sang task TODO tiếp theo
+```
+
+### Tùy chỉnh Reviewer Prompt
+
+Reviewer prompt được đọc từ `H_docs/core/REVIEWER_PROMPT_TEMPLATE.md` — **không hardcode trong harness.sh**.
+Thay đổi template để tùy chỉnh mà không cần sửa harness.sh.
+
+Template hỗ trợ:
+- Checklist review tùy chỉnh
+- Project-specific rules (inject tự động vào cuối prompt)
+- Placeholders được harness thay thế tự động: `{{TIER1_SUMMARY}}`, `{{GIT_DIFF}}`, `{{ITERATION}}`, `{{DEBATE_LOG_PATH}}`
+
+### Giá trị model hợp lệ
+
+Chạy `agy models` để xem danh sách. Ví dụ:
+- `gemini-3.6-flash-low` — rẻ nhất, đủ để review logic (khuyến nghị mặc định)
+- `gemini-3.5-flash-medium` — cân bằng cost/quality
+- `claude-sonnet-4-6` — reviewer chất lượng cao nhất cho task phức tạp
+
+### State machine khi Dual-Model
+
+| Trạng thái | Model | Action |
+|-----------|-------|--------|
+| `EXECUTING` | Executor | PHASE 0-4 (ORIENT→VERIFY), chạy verify.py |
+| `REVIEWING` | Reviewer (khác) | PHASE 5, đọc git diff + tier1 summary. Fresh agy conversation. |
+| `REVIEW_REJECTED` | Executor | Fix dựa trên DEBATE_LOG, re-verify. Max REVIEW_MAX_RETRIES cycles. |
+| `REVIEW_BLOCKED` | Executor | Hết retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
+| `COMMITTING` | Executor | PHASE 6-7, atomic git commits + update runtime docs |
+
+> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Executor tự thực hiện đủ Phase 0-7. retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
+| `COMMITTING` | Executor | PHASE 6-7, atomic git commits + update runtime docs |
+           │
 │  Ghi kết quả vào: H_docs/runtime/DEBATE_LOG.md            │
 │  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
 └──────────────────────────────────────────────────────────────┘
