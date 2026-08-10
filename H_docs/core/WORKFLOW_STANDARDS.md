@@ -147,12 +147,12 @@ Không bao giờ gom nhiều changes không liên quan vào một commit chỉ v
 
 | Sự kiện | Action |
 |---------|--------|
-| Viết xong 1 function/method | → commit ngay |
-| Viết xong 1 file test | → commit riêng |
-| Fix xong 1 bug | → commit riêng (không gộp với feature) |
-| Refactor xong 1 module | → commit riêng (không mix với logic changes) |
-| Cập nhật docs cho 1 feature | → commit riêng |
-| Thêm 1 API endpoint | → commit riêng (handler + route + test = 3 commits) |
+| Viết xong 1 function / feature | → commit 1 lần cho function/feature đó |
+| Viết xong 1 bộ test/docs của 1 task | → commit 1 lần cho cả khối test/docs của task |
+| Fix xong 1 bug | → commit riêng cho bug fix |
+| Refactor xong 1 module | → commit riêng (không mix với feature changes) |
+
+*Lưu ý:* Tránh commit vụn vặt từng file đơn lẻ khi chúng thuộc cùng 1 mục tiêu/task logic chung (ví dụ: cập nhật bộ 4 file docs context thì gom commit 1 lần sau khi hoàn thành cả bộ).
 
 ### Ví dụ đúng ✅
 

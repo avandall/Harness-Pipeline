@@ -93,10 +93,10 @@ Mỗi commit = đúng 1 đơn vị có thể review độc lập
 ```
 
 ### Khi nào commit?
-- Hoàn thành xong **1 function hoàn chỉnh** → commit ngay
-- Hoàn thành xong **1 test file** → commit riêng
-- Sửa xong **1 bug** → commit riêng, không gộp với feature
-- Refactor **1 module** → commit riêng, không mix với feature changes
+- Hoàn thành xong **1 function, 1 feature, hoặc 1 task logic hoàn chỉnh** → commit 1 lần cho cả đơn vị công việc đó.
+- Sửa xong **1 bug** → commit riêng cho bug fix.
+- Refactor xong **1 module** → commit riêng cho refactoring.
+- KHÔNG commit vụn vặt từng file đơn lẻ liên tục nếu các file đó phục vụ cùng một mục tiêu công việc (ví dụ: dọn dẹp bộ 4 docs context thì gom commit 1 lần cho cả bộ docs thay vì tách làm 4 commits riêng).
 
 ### Commit message format
 ```

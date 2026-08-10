@@ -24,8 +24,7 @@ Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc 
 
 ### Những điều LUÔN làm
 - Dùng `H_docs/runtime/` để lưu state — không bao giờ dựa vào conversation history
-- **Commit nhỏ lẻ theo từng function/feature hoàn chỉnh** — không gom commit lớn
-- Commit sau mỗi function, mỗi file test, mỗi bug fix — riêng biệt, reviewable
+- **Commit khi hoàn thành 1 function, 1 feature, hoặc 1 task logic hoàn chỉnh** — không commit liên tục vụn vặt từng file đơn lẻ nếu chúng thuộc cùng một công việc (ví dụ: gom commit toàn bộ bộ docs context sau khi cập nhật xong, không chia nhỏ thành 4 commits riêng).
 - Verify output với evidence cụ thể, không chỉ claim "nó hoạt động"
 - Append vào `PROGRESS_LOG.md` sau mỗi iteration
 - Cập nhật `STATUS.md` sau mỗi hành động quan trọng
