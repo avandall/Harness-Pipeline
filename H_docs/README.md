@@ -79,13 +79,13 @@ AI sẽ tự:
 
 ```bash
 # Cấp quyền thực thi
-chmod +x harness.sh
+chmod +x ./H_docs/harness.sh
 
 # Chạy harness
-./harness.sh --task "TASK-001"
+./H_docs/harness.sh --task "TASK-001"
 
 # Xem options
-./harness.sh --help
+./H_docs/harness.sh --help
 ```
 
 ---
@@ -100,7 +100,7 @@ cat H_docs/runtime/BLOCKED.md
 rm H_docs/runtime/BLOCKED.md
 
 # Chạy lại harness
-./harness.sh
+./H_docs/harness.sh
 ```
 
 ---

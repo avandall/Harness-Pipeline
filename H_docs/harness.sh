@@ -4,11 +4,11 @@
 # Chạy AI agent trong một vòng lặp tự trị với đầy đủ guardrails
 #
 # Cách dùng:
-#   ./harness.sh                               # Chạy với defaults (single-model)
-#   ./harness.sh --max-iter 20                 # Giới hạn 20 iterations
-#   ./harness.sh --task "TASK-001"             # Chỉ định task ID
-#   ./harness.sh --dry-run                     # Simulate, không thực thi thực sự
-#   ./harness.sh --review-model gemini-3.6-flash-low  # Bật Dual-Model mode
+#   ./H_docs/harness.sh                               # Chạy với defaults (single-model)
+#   ./H_docs/harness.sh --max-iter 20                 # Giới hạn 20 iterations
+#   ./H_docs/harness.sh --task "TASK-001"             # Chỉ định task ID
+#   ./H_docs/harness.sh --dry-run                     # Simulate, không thực thi thực sự
+#   ./H_docs/harness.sh --review-model gemini-3.6-flash-low  # Bật Dual-Model mode
 # =============================================================================
 
 set -euo pipefail
@@ -103,7 +103,7 @@ show_help() {
 ${BOLD}harness.sh${NC} — Ralph Loop Execution Script (Overnight Non-Blocking Mode)
 
 ${BOLD}USAGE:${NC}
-  ./harness.sh [OPTIONS]
+  ./H_docs/harness.sh [OPTIONS]
 
 ${BOLD}OPTIONS:${NC}
   --max-iter, -n N        Maximum number of iterations (default: 30)
@@ -137,12 +137,12 @@ ${BOLD}DUAL-MODEL MODE:${NC}
   The reviewer call is a FRESH agy conversation (separate context, same CLI quota).
 
 ${BOLD}EXAMPLES:${NC}
-  ./harness.sh                                  # Single-model mode (classic)
-  ./harness.sh --review-model gemini-3.6-flash-low  # Dual-model: cheap flash reviewer
-  ./harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s  # Premium reviewer
-  ./harness.sh --timeout 20m0s                  # Increase executor timeout
-  ./harness.sh --max-iter 50                    # Limit to 50 iterations
-  ./harness.sh --stop-on-block                  # Strict mode: stop on first blocker
+  ./H_docs/harness.sh                                  # Single-model mode (classic)
+  ./H_docs/harness.sh --review-model gemini-3.6-flash-low  # Dual-model: cheap flash reviewer
+  ./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s  # Premium reviewer
+  ./H_docs/harness.sh --timeout 20m0s                  # Increase executor timeout
+  ./H_docs/harness.sh --max-iter 50                    # Limit to 50 iterations
+  ./H_docs/harness.sh --stop-on-block                  # Strict mode: stop on first blocker
 
 ${BOLD}REVIEWER PROMPT CUSTOMIZATION:${NC}
   Edit H_docs/core/REVIEWER_PROMPT_TEMPLATE.md to customize:
@@ -394,7 +394,7 @@ execute_iteration_single_model() {
   local iter="$1"
 
   # ─── AUTOMATED AGY CLI EXECUTION ─────────────────────────────────────────
-  local iter_prompt="Đọc H_docs/core/AGENT_CONSTITUTION.md, H_docs/context/Tasks_list.md và H_docs/runtime/STATUS.md. Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md. Đọc H_docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md). Thực hiện 1 bước atomic tiếp theo trong task đó theo quy trình Harness Protocol. Ở Phase 4 (VERIFY), BẮT BUỘC chạy 'python3 H_docs/scripts/verify.py' để kiểm định Tier 1 (Linter/Type/Security/Test) và kiểm tra H_docs/runtime/VERIFICATION_REPORT.md. NẾU VERIFICATION_REPORT có lỗi, hãy đọc log ngắn gọn trong đó để sửa ngay. Ở Phase 5 (REVIEW), thực hiện Tier 2 Cognitive Review dựa trên git diff và H_docs/core/REVIEW_PROTOCOL.md. Cập nhật H_docs/runtime/STATUS.md, H_docs/runtime/PROGRESS_LOG.md và tự thực hiện atomic git commits nhỏ. NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào file H_docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật dòng của task đó trong H_docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo. KHÔNG TẠO file BLOCKED.md ở root ngoại trừ khi khẩn cấp. LƯU Ý QUAN TRỌNG: Chỉ được phép ghi 'Phase: ALL_DONE' vào H_docs/runtime/STATUS.md KHI VÀ CHỈ KHI TẤT CẢ các tasks trong Tasks_list.md đã được thực hiện, phản biện, xác minh pass 100% và đánh dấu [x] DONE (hoặc [!] BLOCKED). Khi đó mới cập nhật STATUS.md thành Phase: ALL_DONE và viết H_docs/runtime/PROOF_OF_SOLUTION.md. Nếu dự án còn task chưa hoàn thành, giữ Phase: IN_PROGRESS."
+  local iter_prompt="Đọc H_docs/core/AGENT_CONSTITUTION.md, H_docs/context/Tasks_list.md và H_docs/runtime/STATUS.md. Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md. Đọc H_docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md). Thực hiện 1 bước atomic tiếp theo trong task đó theo quy trình Harness Protocol. Ở Phase 4 (VERIFY), BẮT BUỘC chạy 'python3 H_docs/scripts/verify.py' để kiểm định Tier 1 (Linter/Type/Security/Test) và kiểm tra H_docs/runtime/VERIFICATION_REPORT.md. NẾU VERIFICATION_REPORT có lỗi, hãy đọc log ngắn gọn trong đó để sửa ngay. Ở Phase 5 (REVIEW), thực hiện Tier 2 Cognitive Review dựa trên git diff và H_docs/core/REVIEW_PROTOCOL.md. BẮT BUỘC CẬP NHẬT H_docs/runtime/STATUS.md, H_docs/runtime/PROGRESS_LOG.md và PLAN.md RA FILESYSTEM để lưu progression context cho Ralph loop. QUY TẮC COMMIT: KHÔNG THỰC HIỆN GIT COMMIT TRONG CÁC ITERATION TRUNG GIAN. CHỈ CHẠY GIT COMMIT KHI THỰC SỰ HOÀN THÀNH 1 TASK VÀ ĐÁNH DẤU [x] DONE TRONG Tasks_list.md với commit message format: [TASK-ID] <type>(<scope>): <mô tả ngắn gọn task đã hoàn thành>. NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào file H_docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật dòng của task đó trong H_docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo. KHÔNG TẠO file BLOCKED.md ở root ngoại trừ khi khẩn cấp. LƯU Ý QUAN TRỌNG: Chỉ được phép ghi 'Phase: ALL_DONE' vào H_docs/runtime/STATUS.md KHI VÀ CHỈ KHI TẤT CẢ các tasks trong Tasks_list.md đã được thực hiện, phản biện, xác minh pass 100% và đánh dấu [x] DONE (hoặc [!] BLOCKED). Khi đó mới cập nhật STATUS.md thành Phase: ALL_DONE và viết H_docs/runtime/PROOF_OF_SOLUTION.md. Nếu dự án còn task chưa hoàn thành, giữ Phase: IN_PROGRESS."
 
   log_info "[SINGLE-MODEL] Launching agy for Iteration ${iter}..."
   _run_agy_with_retry "$iter_prompt" "$PRINT_TIMEOUT" "$iter"
@@ -606,8 +606,8 @@ Sau khi sửa, BẮT BUỘC chạy lại 'python3 H_docs/scripts/verify.py' và 
 
 Reviewer đã phê duyệt code (xem H_docs/runtime/DEBATE_LOG.md).
 Thực hiện Phase 6 và Phase 7 theo H_docs/core/WORKFLOW_STANDARDS.md:
-  - PHASE 6 (COMMIT): Tạo atomic git commits nhỏ với message format [iter-${iter}] <type>(<scope>): <desc>
-  - PHASE 7 (REPORT): Cập nhật PROGRESS_LOG.md, STATUS.md, đánh dấu step trong PLAN.md và Tasks_list.md.
+  - PHASE 7 (REPORT): BẮT BUỘC cập nhật PROGRESS_LOG.md, STATUS.md, đánh dấu step trong PLAN.md và Tasks_list.md ra filesystem.
+  - PHASE 6 (COMMIT): CHỈ THỰC HIỆN GIT COMMIT KHI TASK ĐÃ HOÀN THÀNH ([x] DONE). Tạo 1 git commit rõ ràng, mạch lạc với message format: [TASK-ID] <type>(<scope>): <mô tả task đã hoàn thành>. KHÔNG commit nếu task chưa xong.
 
 LƯU Ý: Chỉ ghi 'Phase: ALL_DONE' vào STATUS.md khi TẤT CẢ tasks đã pass 100% và marked [x] DONE hoặc [!] BLOCKED."
     _run_agy_with_retry "$commit_prompt" "5m0s" "$iter" || \
@@ -734,8 +734,7 @@ main() {
 
       EXIT_CONTINUE)
         create_iteration_snapshot "$iter" "CONTINUE"
-        checkpoint_commit "$iter" "chore: iter-${iter} complete — continue"
-        log_info "Iteration ${iter} complete. Continuing..."
+        log_info "Iteration ${iter} complete (progression saved to filesystem). Continuing..."
         iter=$((iter + 1))
         ;;
     esac

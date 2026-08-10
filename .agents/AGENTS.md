@@ -24,7 +24,9 @@ Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc 
 
 ### Những điều LUÔN làm
 - Dùng `H_docs/runtime/` để lưu state — không bao giờ dựa vào conversation history
-- **Commit khi hoàn thành 1 function, 1 feature, hoặc 1 task logic hoàn chỉnh** — không commit liên tục vụn vặt từng file đơn lẻ nếu chúng thuộc cùng một công việc (ví dụ: gom commit toàn bộ bộ docs context sau khi cập nhật xong, không chia nhỏ thành 4 commits riêng).
+- **Cập nhật runtime docs (`STATUS.md`, `PROGRESS_LOG.md`, `PLAN.md`) ra filesystem liên tục sau mỗi iteration** để lưu progression context khi Ralph loop reset phiên.
+- **CHỈ GIT COMMIT KHI HOÀN THÀNH 1 TASK (`[x] DONE`)** — KHÔNG commit vụn vặt lặp đi lặp lại từng iteration, từng file lẻ hay mỗi lần cập nhật runtime docs.
+- **Commit message rõ ràng, mạch lạc, đúng thứ tự**: Dùng format `[TASK-ID] <type>(<scope>): <mô tả task đã hoàn thành>` (ví dụ: `[TASK-001] feat(auth): implement JWT authentication`).
 - Verify output với evidence cụ thể, không chỉ claim "nó hoạt động"
 - Append vào `PROGRESS_LOG.md` sau mỗi iteration
 - Cập nhật `STATUS.md` sau mỗi hành động quan trọng

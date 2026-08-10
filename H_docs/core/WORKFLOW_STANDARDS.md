@@ -133,83 +133,41 @@ Ghi kết quả review vào `H_docs/runtime/DEBATE_LOG.md`. Cần đạt `APPROV
 
 ---
 
-## PHASE 6 — COMMIT (Cam kết)
+## PHASE 6 — COMMIT (Cam kết theo Task)
 
-**Mục tiêu:** Tạo checkpoint an toàn, nhỏ, và reviewable trong git.
+**Mục tiêu:** Tạo checkpoint an toàn, mạch lạc và có nghĩa trong git khi 1 TASK đã hoàn thành.
 
-### Nguyên tắc cốt lõi: Commit như Senior Dev
+### Quy tắc commit:
 
-> **"1 commit = 1 chức năng có thể review độc lập bởi người khác."**
+> **"1 commit = 1 Task hoàn chỉnh đã được verify pass 100% [x] DONE."**
 
-Không bao giờ gom nhiều changes không liên quan vào một commit chỉ vì "tiện". Mỗi commit phải có thể được đọc, hiểu, và approve mà không cần đọc commit nào khác.
-
-### Khi nào commit?
-
-| Sự kiện | Action |
-|---------|--------|
-| Viết xong 1 function / feature | → commit 1 lần cho function/feature đó |
-| Viết xong 1 bộ test/docs của 1 task | → commit 1 lần cho cả khối test/docs của task |
-| Fix xong 1 bug | → commit riêng cho bug fix |
-| Refactor xong 1 module | → commit riêng (không mix với feature changes) |
-
-*Lưu ý:* Tránh commit vụn vặt từng file đơn lẻ khi chúng thuộc cùng 1 mục tiêu/task logic chung (ví dụ: cập nhật bộ 4 file docs context thì gom commit 1 lần sau khi hoàn thành cả bộ).
-
-### Ví dụ đúng ✅
-
-```bash
-# Implement auth feature → nhiều commit nhỏ
-git commit -m "[iter-2] feat(auth): add password hashing with bcrypt"
-git commit -m "[iter-2] feat(auth): add JWT token generation service"
-git commit -m "[iter-2] feat(auth): add JWT validation middleware"
-git commit -m "[iter-2] test(auth): unit tests for password hashing"
-git commit -m "[iter-2] test(auth): unit tests for JWT service"
-git commit -m "[iter-2] docs(auth): add /login /register to API docs"
-```
-
-### Ví dụ sai ❌
-
-```bash
-# Gom tất cả vào 1 commit khổng lồ — KHÔNG được phép
-git commit -m "[iter-2] feat: implement auth with JWT, add tests, fix bug, update docs"
-```
+- **Khi nào commit?**: CHỈ commit khi task hiện tại đã được thực thi, kiểm tra (Phase 4 VERIFY) và phản biện (Phase 5 REVIEW) hoàn tất 100%, được đánh dấu `[x] DONE` trong `Tasks_list.md`.
+- **Khi nào KHÔNG commit?**: Trong các iterations trung gian khi task chưa xong, KHÔNG tạo git commit lặt vặt (như `chore: iter-N complete` hay commit lắt nhắt mỗi lần sửa file).
 
 ### Commit message format
 
 ```
-[iter-N] <type>(<scope>): <short description>
+[TASK-ID] <type>(<scope>): <clear description of completed task>
 
-<optional body: what và why — bắt buộc nếu change không tự giải thích>
-
-Refs: #<issue-number nếu có>
+Types: feat | fix | refactor | docs | test | chore
+Example: [TASK-001] feat(auth): implement JWT login and session handler
 ```
-
-**Types:**
-- `feat` — tính năng mới
-- `fix` — sửa lỗi
-- `refactor` — tái cấu trúc không thay đổi behavior
-- `docs` — thay đổi docs
-- `test` — thêm/sửa tests
-- `chore` — build, config, dependency
-
-### Commit size limits (hướng dẫn)
-- **Ideal:** < 200 lines changed per commit
-- **Acceptable:** < 400 lines nếu là boilerplate/generated code
-- **Red flag:** > 500 lines → tách nhỏ hơn trước khi commit
 
 ---
 
 
-## PHASE 7 — REPORT (Báo cáo)
+## PHASE 7 — REPORT (Báo cáo Tiến độ ra Filesystem)
 
-**Mục tiêu:** Cập nhật tất cả runtime docs để iteration tiếp theo có đủ context.
+**Mục tiêu:** Cập nhật tất cả runtime docs trên filesystem sau mỗi iteration để phiên làm việc tiếp theo của Ralph Loop nắm đầy đủ context.
 
-**Checklist:**
-- [ ] Append entry vào `PROGRESS_LOG.md`
-- [ ] Update `STATUS.md` với trạng thái mới và next action (`Phase: IN_PROGRESS` khi vẫn còn tasks, chỉ được ghi `Phase: ALL_DONE` khi tất cả tasks trong `Tasks_list.md` đã pass 100%, phản biện xong và marked DONE)
-- [ ] Mark step đã xong trong `PLAN.md` và `Tasks_list.md`
-- [ ] Nếu tất cả tasks đã hoàn thành (`Phase: ALL_DONE`): hoàn thiện `PROOF_OF_SOLUTION.md`
-- [ ] Nếu BLOCKED: tạo `BLOCKERS/<TASK_ID>.md` (Overnight Mode)
-- [ ] Tạo `ITERATIONS/iter_NNN.md` với đầy đủ thông tin iteration
+**Lưu ý quan trọng:** Cập nhật runtime docs trên filesystem là BẮT BUỘC sau mỗi iteration (dù chưa commit git) để các session fresh restart do script `harness.sh` tự mở luôn đọc được state mới nhất từ filesystem memory.
+
+**Checklist sau mỗi iteration:**
+- [ ] Append entry mới vào `PROGRESS_LOG.md` trên filesystem.
+- [ ] Update `STATUS.md` trên filesystem với trạng thái mới (`Phase: IN_PROGRESS` khi vẫn còn task, chỉ ghi `Phase: ALL_DONE` khi toàn bộ task queue trong `Tasks_list.md` đã DONE/BLOCKED).
+- [ ] Cập nhật tiến độ các bước trong `PLAN.md` và `Tasks_list.md`.
+- [ ] Tạo snapshot iteration tại `ITERATIONS/iter_NNN.md`.
+- [ ] Nếu Task đã hoàn thành `[x] DONE`: Thực hiện Phase 6 (COMMIT) cho task đó.
 
 ---
 

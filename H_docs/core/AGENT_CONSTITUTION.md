@@ -31,8 +31,8 @@ Never assume context. Always read it.
 Each iteration of work must be:
 - **Atomic**: Completable in one coherent unit
 - **Verifiable**: Has a clear pass/fail exit condition
-- **Logged**: Appended to `H_docs/runtime/PROGRESS_LOG.md` after completion
-- **Committed**: Results committed to git before the next iteration starts
+- **Logged**: Appended to `H_docs/runtime/PROGRESS_LOG.md` after completion of each step/iteration (written to filesystem to maintain memory across fresh agy runs)
+- **Committed**: Git commit is created ONLY when the target task is completely DONE (`[x] DONE`). Intermediate iterations update filesystem runtime docs without making git commits.
 
 Do not compound multiple unrelated changes in one iteration.
 
@@ -71,39 +71,38 @@ Before committing any significant change:
 
 ## Điều 8 — Git Is Your Safety Net (Git là mạng lưới an toàn)
 
-**Commit sớm, commit nhỏ, commit thường xuyên — như một senior developer.**
+**Commit theo Task hoàn chỉnh — rõ ràng, mạch lạc, đúng thứ tự.**
 
-### Quy tắc Atomic Commit (QUAN TRỌNG)
+### Quy tắc Task-Based Commit (QUAN TRỌNG)
 
 ```
-Mỗi commit = đúng 1 đơn vị có thể review độc lập
-```
-
-**ĐÚNG** — mỗi commit là một unit rõ ràng:
-```
-[iter-2] feat(auth): add JWT token generation
-[iter-2] feat(auth): add JWT validation middleware  
-[iter-2] test(auth): add unit tests for JWT service
-[iter-2] docs(auth): update API docs for /login endpoint
+Mỗi commit = đúng 1 Task hoàn chỉnh đã pass verify [x] DONE
 ```
 
-**SAI** — gom nhiều thứ vào 1 commit:
+**ĐÚNG** — commit rõ ràng, mạch lạc, đúng thứ tự task:
 ```
-[iter-2] feat: implement auth, add tests, update docs, fix bug in user model
+[TASK-001] feat(infra): setup database schema & SQLAlchemy models
+[TASK-002] feat(auth): add JWT token generation and validation middleware
+[TASK-003] fix(quota): resolve boundary edge cases in quota enforcement
+```
+
+**SAI** — commit vụn vặt từng iteration hoặc mỗi lần cập nhật runtime docs:
+```
+[iter-1] chore: iter-1 complete — continue
+[iter-2] chore: iter-2 complete — continue
+[iter-3] docs: update status.md
 ```
 
 ### Khi nào commit?
-- Hoàn thành xong **1 function, 1 feature, hoặc 1 task logic hoàn chỉnh** → commit 1 lần cho cả đơn vị công việc đó.
-- Sửa xong **1 bug** → commit riêng cho bug fix.
-- Refactor xong **1 module** → commit riêng cho refactoring.
-- KHÔNG commit vụn vặt từng file đơn lẻ liên tục nếu các file đó phục vụ cùng một mục tiêu công việc (ví dụ: dọn dẹp bộ 4 docs context thì gom commit 1 lần cho cả bộ docs thay vì tách làm 4 commits riêng).
+- **CHỈ commit khi TASK hoàn thành (`[x] DONE`)**: Sau khi task đã hoàn tất tất cả các bước, được kiểm tra (Phase 4 VERIFY) và phản biện (Phase 5 REVIEW) pass 100%.
+- **Trong khi task chưa xong**: Cập nhật runtime docs (`STATUS.md`, `PROGRESS_LOG.md`, `PLAN.md`) ra filesystem liên tục để lưu progression context cho Ralph loop khi reset phiên, nhưng **KHÔNG chạy git commit**.
 
 ### Commit message format
 ```
-[iter-N] <type>(<scope>): <short description>
+[TASK-ID] <type>(<scope>): <short description of completed task>
 
 Types: feat | fix | refactor | docs | test | chore
-Example: [iter-3] fix(auth): handle null user in JWT middleware
+Example: [TASK-001] feat(auth): implement JWT authentication handler
 ```
 
 ### Recovery

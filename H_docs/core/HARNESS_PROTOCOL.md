@@ -20,19 +20,21 @@ User → [Long conversation → context rot → hallucination → wrong output]
 
 **Ralph Loop làm:**
 ```
-┌─────────────────────────────────────────────────┐
-│  LOOP:                                          │
-│  1. Fresh agent start                           │
-│  2. Read filesystem state (H_docs/runtime/)       │
-│  3. Execute ONE atomic unit of work             │
-│  4. Verify output (pass/fail)                   │
-│  5. Write results to filesystem                 │
-│  6. Git commit                                  │
-│  7. Check exit condition                        │
-│     ├── DONE → Exit loop ✅                     │
-│     ├── BLOCKED → Create BLOCKED.md → Stop 🛑  │
-│     └── CONTINUE → Go to step 1 🔄             │
-└─────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  LOOP:                                                 │
+│  1. Fresh agent start                                  │
+│  2. Read filesystem state (H_docs/runtime/)            │
+│  3. Execute ONE atomic unit of work                    │
+│  4. Verify output (pass/fail)                          │
+│  5. Write results & progression state to filesystem    │
+│  6. Check task completion:                             │
+│     ├── Task [x] DONE → Git commit [TASK-ID]           │
+│     └── Task IN_PROGRESS → Skip commit, keep in status │
+│  7. Check exit condition                               │
+│     ├── ALL DONE → Exit loop ✅                        │
+│     ├── BLOCKED → Create BLOCKERS/<ID>.md → Next task  │
+│     └── CONTINUE → Go to step 1 🔄                    │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
