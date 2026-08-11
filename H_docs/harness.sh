@@ -327,9 +327,18 @@ create_iteration_snapshot() {
   local result="$2"
   local iter_file="${ITERATIONS_DIR}/iter_$(printf '%03d' $iter).md"
 
+  # Đọc task ID đang active từ STATUS.md (nếu có)
+  local active_task="unknown"
+  if [[ -f "${RUNTIME_DIR}/STATUS.md" ]]; then
+    active_task=$(grep -m1 "^Current Task ID:" "${RUNTIME_DIR}/STATUS.md" 2>/dev/null \
+      | sed 's/Current Task ID://;s/^[[:space:]]*//' || echo "unknown")
+    [[ -z "$active_task" ]] && active_task="unknown"
+  fi
+
   cat > "$iter_file" << EOF
 # Iteration $(printf '%03d' $iter)
 - Date: $(date '+%Y-%m-%d %H:%M')
+- Task: ${active_task}
 - Result: ${result}
 - Git: $(git log --oneline -1 2>/dev/null || echo "no commits yet")
 EOF
@@ -341,25 +350,13 @@ EOF
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Git commit checkpoint
+# NOTE: checkpoint_commit() đã bị XÓA theo AGENT_CONSTITUTION.md Điều 8:
+# "1 commit = 1 Task hoàn chỉnh đã pass verify [x] DONE"
+#
+# Git commit là trách nhiệm của AI agent (Phase 6), chỉ khi task [x] DONE.
+# harness.sh KHÔNG tự động commit — tránh tạo commit vụn vặt theo iteration.
+# Để xem uncommitted changes: git status
 # ────────────────────────────────────────────────────────────────────────────
-checkpoint_commit() {
-  local iter="$1"
-  local message="$2"
-
-  if $DRY_RUN; then
-    log_info "[DRY RUN] Would commit: [iter-${iter}] ${message}"
-    return
-  fi
-
-  if [[ -n "$(git status --porcelain)" ]]; then
-    git add -A
-    git commit -m "[iter-${iter}] ${message}" || true
-    log_ok "Committed: [iter-${iter}] ${message}"
-  else
-    log_info "No changes to commit at iter-${iter}"
-  fi
-}
 
 # ────────────────────────────────────────────────────────────────────────────
 # Execute one iteration — dispatcher routes to single-model or dual-model
@@ -694,8 +691,7 @@ main() {
       EXIT_ALL_TASKS_PROCESSED|EXIT_DONE)
         log_section "✅ ALL QUEUED TASKS PROCESSED"
         create_iteration_snapshot "$iter" "DONE"
-        checkpoint_commit "$iter" "chore: overnight queue complete — update runtime docs"
-        
+
         local duration=$(( $(date +%s) - start_time ))
         local done_count
         done_count=$(grep -E "^\|.*\`TASK-" "${CONTEXT_DIR}/Tasks_list.md" 2>/dev/null | grep -c "\[x\]" || true)
@@ -706,6 +702,18 @@ main() {
         log_ok "Tasks Completed ([x] DONE): ${done_count}"
         log_warn "Tasks Blocked   ([!] BLOCKED): ${blocked_count} (See ${BLOCKERS_DIR}/ for reports)"
         log_ok "See H_docs/runtime/PROOF_OF_SOLUTION.md for verification"
+
+        # Kiểm tra uncommitted changes — git commit là trách nhiệm của AI (Phase 6)
+        # chỉ khi task [x] DONE theo format [TASK-ID] <type>(<scope>): <mô tả>
+        if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+          log_warn "⚠️  Uncommitted changes detected. Review: git status"
+          log_warn "    AI should have committed each task via Phase 6. Check PROGRESS_LOG.md."
+        else
+          log_ok "Git working tree clean. All task commits are in order."
+          # Tag milestone khi toàn bộ queue done
+          local tag_name="harness/done-$(date '+%Y%m%d-%H%M')"
+          git tag "$tag_name" 2>/dev/null && log_ok "Git tag created: ${tag_name}" || true
+        fi
         break
         ;;
 
@@ -725,10 +733,14 @@ main() {
       EXIT_MAX_ITER)
         log_section "⚠️ MAX ITERATIONS REACHED"
         create_iteration_snapshot "$iter" "MAX_ITER"
-        checkpoint_commit "$iter" "chore: max iterations reached — partial progress"
         log_warn "Reached maximum iterations (${MAX_ITERATIONS})"
         log_warn "Review H_docs/runtime/PROGRESS_LOG.md for current state"
         log_warn "Increase --max-iter or review Tasks_list.md to continue"
+        # KHÔNG auto-commit — AI sẽ đã commit theo task khi xong (Phase 6)
+        # Uncommitted changes = task chưa done, đây là trạng thái đúng
+        if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+          log_warn "Uncommitted changes exist (task likely still IN_PROGRESS). Check git status."
+        fi
         exit 2
         ;;
 

@@ -53,7 +53,7 @@
 #### Actions Taken
 1. Đọc H_docs/core/AGENT_CONSTITUTION.md
 2. Đọc H_docs/context/PROJECT_BRIEF.md
-3. Đọc H_docs/context/CURRENT_TASK.md
+3. Đọc H_docs/runtime/CURRENT_TASK.md
 4. Đọc H_docs/context/BOUNDARIES.md
 
 #### Result

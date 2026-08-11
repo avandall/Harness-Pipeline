@@ -8,6 +8,7 @@
 ## Current State
 
 ```
+Current Task ID: 
 Task:           
 Next Task:      
 Phase:          

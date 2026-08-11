@@ -73,7 +73,7 @@ Ngành kỹ thuật chuyên thiết kế và xây dựng hệ thống để AI a
 Phương pháp dùng 2 AI agents: một xây dựng, một phê bình. Xem `REVIEW_PROTOCOL.md` phần 3.
 
 **Iteration (Vòng lặp)**
-Một chu kỳ đầy đủ của Ralph Loop: bắt đầu với fresh context, thực thi một unit of work, verify, commit, update docs.
+Một chu kỳ đầy đủ của Ralph Loop: bắt đầu với fresh context, thực thi một unit of work, verify, update runtime docs trên filesystem. Commit git chỉ xảy ra khi task `[x] DONE`, không phải sau mỗi iteration.
 
 ---
 

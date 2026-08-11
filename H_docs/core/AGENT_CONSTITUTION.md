@@ -19,7 +19,7 @@ H_docs/runtime/       = permanent authoritative state
 ## Điều 2 — Read Before Write (Đọc trước khi viết)
 
 Before generating any output or making any change, you MUST:
-1. Read `H_docs/context/CURRENT_TASK.md` — understand the exact task scope
+1. Read `H_docs/runtime/CURRENT_TASK.md` — understand the exact task scope
 2. Read `H_docs/context/PROJECT_BRIEF.md` — understand project constraints
 3. Read `H_docs/context/BOUNDARIES.md` — understand what you are NOT allowed to do
 4. Read `H_docs/runtime/STATUS.md` (if exists) — understand current state
@@ -107,7 +107,8 @@ Example: [TASK-001] feat(auth): implement JWT authentication handler
 
 ### Recovery
 If anything goes wrong: `git reset --hard HEAD` hoặc `git reset --hard HEAD~1`.
-Commit nhỏ = mỗi rollback chỉ mất ít nhất công sức.
+
+> ⚠️ **[iter-N] ANTI-PATTERN**: Không bao giờ commit với format `[iter-N]` hay commit runtime docs (STATUS.md, PROGRESS_LOG.md). Đây là lỗi phổ biến nhất. Commit format hợp lệ duy nhất: `[TASK-ID] <type>(<scope>): <mô tả>`.
 
 ## Điều 9 — Escalate, Don't Improvise (Leo thang, không tự ý)
 
@@ -134,7 +135,7 @@ After each task is marked DONE, append a "Retrospective" section to `PROOF_OF_SO
 2. H_docs/core/HARNESS_PROTOCOL.md          ← Hiểu cơ chế vòng lặp
 3. H_docs/core/WORKFLOW_STANDARDS.md        ← Hiểu từng bước thực thi
 4. H_docs/context/PROJECT_BRIEF.md          ← Hiểu dự án
-5. H_docs/context/CURRENT_TASK.md           ← Hiểu task cụ thể
+5. H_docs/runtime/CURRENT_TASK.md           ← Hiểu task cụ thể
 6. H_docs/context/BOUNDARIES.md             ← Biết giới hạn
 7. H_docs/runtime/STATUS.md                 ← Biết trạng thái hiện tại
 → Bắt đầu tạo/cập nhật H_docs/runtime/PLAN.md

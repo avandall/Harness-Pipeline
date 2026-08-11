@@ -89,7 +89,7 @@ KHÔNG được phép gọi:
 AI được phép:
 ✅ git reset --hard HEAD    (xóa bỏ unstaged/staged changes hiện tại)
 ✅ git stash / stash pop    (tạm thời lưu / khôi phục changes)
-✅ Commit theo đúng quy chuẩn git convention [iter-N]
+✅ Commit theo đúng quy chuẩn: [TASK-ID] <type>(<scope>): <mô tả ngắn task đã hoàn thành> — CHỈ khi task [x] DONE
 
 Phải hỏi human:
 ❓ git reset --hard HEAD~N  (quay ngược N commits)

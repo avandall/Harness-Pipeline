@@ -14,7 +14,7 @@ Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc 
 2. `H_docs/core/HARNESS_PROTOCOL.md` — Ralph Loop và state machine
 3. `H_docs/core/WORKFLOW_STANDARDS.md` — Pipeline 7 phases
 4. `H_docs/context/PROJECT_BRIEF.md` — Mô tả dự án
-5. `H_docs/context/CURRENT_TASK.md` — Task đang làm
+5. `H_docs/runtime/CURRENT_TASK.md` — Task đang làm
 6. `H_docs/context/BOUNDARIES.md` — Giới hạn quyền hạn
 7. `H_docs/runtime/STATUS.md` — Trạng thái hiện tại (nếu tồn tại)
 
@@ -40,6 +40,7 @@ Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc 
 - Claim task DONE mà không có verification evidence
 - Tiếp tục khi đã gặp blocker — tạo `BLOCKED.md` thay vào đó
 - Giữ state trong conversation — write ra file
+- **Commit với format `[iter-N]`** hoặc commit runtime docs (STATUS.md, PROGRESS_LOG.md, PLAN.md)
 
 ### Khi bị kẹt (Overnight Non-Blocking Mode)
 1. Ghi lý do kẹt và câu hỏi chi tiết vào file `H_docs/runtime/BLOCKERS/<TASK_ID>.md`
@@ -63,11 +64,17 @@ H_docs/
 ## Git Convention
 
 ```
-[iter-N] <type>(<scope>): <description>
+[TASK-ID] <type>(<scope>): <mô tả ngắn task đã hoàn thành>
 
 Types: feat | fix | refactor | docs | test | chore
-Example: [iter-3] fix(auth): handle null user in JWT middleware
+Example: [TASK-001] feat(auth): implement JWT authentication handler
+Example: [TASK-002] fix(quota): resolve boundary edge cases
 ```
+
+> ⚠️ **ANTI-PATTERN cần tránh tuyệt đối:**
+> - `[iter-3] fix(auth): ...` — SAI, không bao giờ dùng prefix [iter-N]
+> - `chore: update status.md` — SAI, không commit runtime docs
+> - Commit giữa chừng khi task chưa `[x] DONE` — SAI
 
 ---
 

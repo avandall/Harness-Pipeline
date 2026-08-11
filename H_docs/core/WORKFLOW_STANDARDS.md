@@ -29,7 +29,7 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 **Checklist:**
 - [ ] Đọc `H_docs/core/AGENT_CONSTITUTION.md`
 - [ ] Đọc `H_docs/context/PROJECT_BRIEF.md` → hiểu mục tiêu dài hạn
-- [ ] Đọc `H_docs/context/CURRENT_TASK.md` → hiểu task ngay bây giờ
+- [ ] Đọc `H_docs/runtime/CURRENT_TASK.md` → hiểu task ngay bây giờ
 - [ ] Đọc `H_docs/context/BOUNDARIES.md` → biết giới hạn
 - [ ] Đọc `H_docs/runtime/STATUS.md` nếu tồn tại → biết đang ở đâu
 - [ ] Đọc entry cuối của `H_docs/runtime/PROGRESS_LOG.md` nếu tồn tại
@@ -160,14 +160,17 @@ Example: [TASK-001] feat(auth): implement JWT login and session handler
 
 **Mục tiêu:** Cập nhật tất cả runtime docs trên filesystem sau mỗi iteration để phiên làm việc tiếp theo của Ralph Loop nắm đầy đủ context.
 
-**Lưu ý quan trọng:** Cập nhật runtime docs trên filesystem là BẮT BUỘC sau mỗi iteration (dù chưa commit git) để các session fresh restart do script `harness.sh` tự mở luôn đọc được state mới nhất từ filesystem memory.
+**Lưu ý quan trọng:**
+- Cập nhật runtime docs trên filesystem là BẮT BUỘC sau mỗi iteration (dù chưa commit git) để các session fresh restart do script `harness.sh` tự mở luôn đọc được state mới nhất từ filesystem memory.
+- **KHÔNG commit runtime docs** (STATUS.md, PROGRESS_LOG.md, PLAN.md) vào git — chỉ AI đọc, không cần lưu vào git history.
+- **Thứ tự:** Phase 6 (COMMIT) phải được chạy TRƯỚC Phase 7 cho task đã done. Phase 7 update docs SAU khi đã commit xong.
 
 **Checklist sau mỗi iteration:**
 - [ ] Append entry mới vào `PROGRESS_LOG.md` trên filesystem.
 - [ ] Update `STATUS.md` trên filesystem với trạng thái mới (`Phase: IN_PROGRESS` khi vẫn còn task, chỉ ghi `Phase: ALL_DONE` khi toàn bộ task queue trong `Tasks_list.md` đã DONE/BLOCKED).
 - [ ] Cập nhật tiến độ các bước trong `PLAN.md` và `Tasks_list.md`.
 - [ ] Tạo snapshot iteration tại `ITERATIONS/iter_NNN.md`.
-- [ ] Nếu Task đã hoàn thành `[x] DONE`: Thực hiện Phase 6 (COMMIT) cho task đó.
+- [ ] Nếu Task đã hoàn thành `[x] DONE`: Đã thực hiện Phase 6 (COMMIT) rồi — kiểm tra lại `git log --oneline -3` để confirm.
 
 ---
 
@@ -189,6 +192,12 @@ Không biết bước tiếp theo?
 Output không verify được?
   → PHASE 5 → DEBATE_LOG.md → Retry hoặc BLOCKED.md
 
-Mọi thứ xong?
-  → PHASE 7 → Cập nhật tất cả runtime docs → Git tag
+Task xong ([x] DONE)?
+  → PHASE 6 (COMMIT): git add -A && git commit -m "[TASK-ID] <type>(<scope>): <mô tả>"
+  → PHASE 7 (REPORT): Cập nhật PROGRESS_LOG.md, STATUS.md, Tasks_list.md
+  → Kông bao giờ commit STATUS.md/PROGRESS_LOG.md riêng lẻ!
+
+Tất cả tasks done?
+  → PHASE 7 → Viết PROOF_OF_SOLUTION.md → STATUS.md: Phase: ALL_DONE
+  → harness.sh tự động tạo git tag milestone
 ```

@@ -185,36 +185,7 @@ Chạy `agy models` để xem danh sách. Ví dụ:
 | `REVIEW_BLOCKED` | Executor | Hết retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
 | `COMMITTING` | Executor | PHASE 6-7, atomic git commits + update runtime docs |
 
-> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Executor tự thực hiện đủ Phase 0-7. retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
-| `COMMITTING` | Executor | PHASE 6-7, atomic git commits + update runtime docs |
-           │
-│  Ghi kết quả vào: H_docs/runtime/DEBATE_LOG.md            │
-│  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
-└──────────────────────────────────────────────────────────────┘
-                │
-      ┌─────────┴───────────┐
-      ▼ APPROVED            ▼ REJECTED
-   Commit + next iter    Executor đọc DEBATE_LOG → fix → re-VERIFY
-                          (tối đa 2 lần retry/iter, sau đó continue)
-```
-
-### Giá trị model hợp lệ
-
-Chạy `agy models` để xem danh sách. Ví dụ:
-- `gemini-3.6-flash-low` — rẻ nhất, đủ để review logic (khuyến nghị mặc định)
-- `gemini-3.5-flash-medium` — cân bằng cost/quality
-- `claude-sonnet-4-6` — reviewer chất lượng cao nhất cho task phức tạp
-
-### State machine khi Dual-Model
-
-| Trạng thái | Model | Action |
-|-----------|-------|--------|
-| `EXECUTING` | Executor | PHASE 0-4, runs verify.py |
-| `REVIEWING` | Reviewer (khác) | PHASE 5, reads git diff only |
-| `REVIEW_REJECTED` | Executor | Fix based on DEBATE_LOG, re-verify |
-| `COMMITTING` | Executor | Atomic git commits |
-
-> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Phase 5 do executor tự thực hiện.
+> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Executor tự thực hiện đủ Phase 0-7.
 
 ---
 
