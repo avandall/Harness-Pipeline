@@ -1,0 +1,18 @@
+name: "python_backend"
+description: "Preset adapter for Python Backend projects (Ruff + Mypy + Pytest + Bandit)"
+version: "1.0.0"
+
+static_checkers:
+  linter: "ruff check ."
+  type_checker: "mypy . --ignore-missing-imports"
+  security_scanner: "bandit -r . -ll -q"
+
+test_runner:
+  unit_tests: "pytest --tb=short -q"
+
+compactor:
+  max_traceback_lines: 20
+  keep_patterns:
+    - "Traceback"
+    - "FAILED"
+    - "ERROR"
