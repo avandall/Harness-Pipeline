@@ -28,7 +28,7 @@ def get_next_todo_task(workspace_dir: Path) -> str:
     """Scan pipeline/docs/context/Tasks_list.md and return the first task marked [ ] TODO or [/] IN_PROGRESS."""
     tasks_file = workspace_dir / "pipeline" / "docs" / "context" / "Tasks_list.md"
     if not tasks_file.exists():
-        tasks_file = workspace_dir / "H_docs" / "context" / "Tasks_list.md"
+        tasks_file = workspace_dir / "pipeline/docs" / "context" / "Tasks_list.md"
     if not tasks_file.exists():
         return "TASK-001"
 

@@ -99,7 +99,7 @@ if [[ -f "${GITIGNORE}" ]]; then
     echo "" >> "${GITIGNORE}"
     echo "# Agent Pipeline Logs" >> "${GITIGNORE}"
     echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
-    echo "H_docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
+    echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
   fi
 fi
 

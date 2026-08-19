@@ -224,7 +224,7 @@ def main():
     # ── Full mode: write VERIFICATION_REPORT.md ──────────────────────────────
     docs_runtime = Path("pipeline/docs/runtime")
     if not docs_runtime.parent.exists():
-        docs_runtime = Path("H_docs/runtime")
+        docs_runtime = Path("pipeline/docs/runtime")
     report_path = docs_runtime / "VERIFICATION_REPORT.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 

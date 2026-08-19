@@ -7,8 +7,8 @@ __pycache__/
 .mypy_cache/
 
 # Agent Runtime Logs
-H_docs/runtime/session_*.jsonl
-H_docs/runtime/BLOCKERS/
+pipeline/docs/runtime/session_*.jsonl
+pipeline/docs/runtime/BLOCKERS/
 
 # Environment & Secrets
 .env

@@ -27,12 +27,12 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 **Mục tiêu:** Hiểu đầy đủ context trước khi làm bất cứ điều gì.
 
 **Checklist:**
-- [ ] Đọc `H_docs/core/AGENT_CONSTITUTION.md`
-- [ ] Đọc `H_docs/context/PROJECT_BRIEF.md` → hiểu mục tiêu dài hạn
-- [ ] Đọc `H_docs/runtime/CURRENT_TASK.md` → hiểu task ngay bây giờ
-- [ ] Đọc `H_docs/context/BOUNDARIES.md` → biết giới hạn
-- [ ] Đọc `H_docs/runtime/STATUS.md` nếu tồn tại → biết đang ở đâu
-- [ ] Đọc entry cuối của `H_docs/runtime/PROGRESS_LOG.md` nếu tồn tại
+- [ ] Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`
+- [ ] Đọc `pipeline/docs/context/PROJECT_BRIEF.md` → hiểu mục tiêu dài hạn
+- [ ] Đọc `pipeline/docs/runtime/CURRENT_TASK.md` → hiểu task ngay bây giờ
+- [ ] Đọc `pipeline/docs/context/BOUNDARIES.md` → biết giới hạn
+- [ ] Đọc `pipeline/docs/runtime/STATUS.md` nếu tồn tại → biết đang ở đâu
+- [ ] Đọc entry cuối của `pipeline/docs/runtime/PROGRESS_LOG.md` nếu tồn tại
 
 **Output:** Hiểu rõ: Tôi đang làm gì? Cho ai? Với những giới hạn nào? Đang ở bước nào?
 
@@ -50,7 +50,7 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 3. Xác định **Verification Method** — test gì, command gì, output gì để verify?
 4. Xác định **Dependencies** — cần gì để bắt đầu?
 
-**Output:** Ghi vào `H_docs/runtime/PLAN.md` section "Spec"
+**Output:** Ghi vào `pipeline/docs/runtime/PLAN.md` section "Spec"
 
 **Nguyên tắc:** Nếu không thể định nghĩa "done", không bắt đầu. Tạo `BLOCKED.md`.
 
@@ -113,7 +113,7 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
    - Nếu `Status: PASS`: Chuyển sang Phase 5.
 
 3. **Capture Bằng Chứng:**
-   - Ghi ngắn gọn kết quả Tier 1 Verification vào `H_docs/runtime/PROOF_OF_SOLUTION.md`.
+   - Ghi ngắn gọn kết quả Tier 1 Verification vào `pipeline/docs/runtime/PROOF_OF_SOLUTION.md`.
 
 ---
 
@@ -121,7 +121,7 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 
 **Mục tiêu:** Tập trung AI Reviewer vào Logic ngầm, Edge Cases, Performance & Scalability (vì cú pháp, kiểu dữ liệu, formatting đã được Tier 1 CLI đảm bảo 100%).
 
-Thực hiện checklist từ `H_docs/core/REVIEW_PROTOCOL.md` dựa trên `git diff`.
+Thực hiện checklist từ `pipeline/docs/core/REVIEW_PROTOCOL.md` dựa trên `git diff`.
 
 **Tối thiểu phải kiểm tra:**
 1. **Logic & Edge Cases:** Có trường hợp biên nào (null, empty, memory overflow, timeout) chưa xử lý không?
@@ -129,7 +129,7 @@ Thực hiện checklist từ `H_docs/core/REVIEW_PROTOCOL.md` dựa trên `git d
 3. **Clean Code & Modularity:** Code có tuân theo `CODE_STANDARDS.md`, dễ đọc và bảo trì không?
 4. **Side Effects:** Code thay đổi có phá vỡ các chức năng cũ không?
 
-Ghi kết quả review vào `H_docs/runtime/DEBATE_LOG.md`. Cần đạt `APPROVED` trước khi sang Phase 6.
+Ghi kết quả review vào `pipeline/docs/runtime/DEBATE_LOG.md`. Cần đạt `APPROVED` trước khi sang Phase 6.
 
 ---
 
