@@ -223,3 +223,34 @@ Bắt đầu Phase 1 & Phase 2:
 3. Triển khai `engine/session/event_log.py` và `engine/tools/compactor.py` để xử lý việc lưu trữ Event Log append-only và cắt tỉa log lỗi Python.
 4. Tuân thủ strict rules trong `AGENTS.md`.
 ```
+
+---
+
+## 7. Trạng thái Triển khai Hiện tại (Implementation Status)
+
+> Cập nhật: 2026-08-19. Trạng thái này phản ánh sau đợt refactor đầu tiên.
+
+| Module | File | Trạng thái | Ghi chú |
+|--------|------|-----------|---------|
+| **Session - Event Log** | `engine/session/event_log.py` | ✅ Production-ready | Append-only JSONL, Pydantic schema |
+| **Session - Compactor** | `engine/session/compactor.py` | ✅ Production-ready | Single source of truth (verify.py import từ đây) |
+| **Security - Vault Proxy** | `engine/security/vault_proxy.py` | ✅ Production-ready | Redact credentials khỏi output |
+| **Security - HITL Gate** | `engine/security/hitl_gate.py` | ✅ Production-ready | Pattern-matching, extensible |
+| **Observability - Cost Tracker** | `engine/observability/cost_tracker.py` | ✅ Production-ready | Multi-model pricing table |
+| **Observability - Tracer** | `engine/observability/tracer.py` | ✅ Production-ready | Span timing |
+| **Harness - State Machine** | `engine/harness/state_machine.py` | ✅ Production-ready | Valid transitions, history |
+| **Harness - Loop** | `engine/harness/loop.py` | ⚠️ **Skeleton** | Event logging OK, nhưng chưa có LLM call thực sự |
+| **CLI** | `bin/agent-run` | ⚠️ **Skeleton** | Gọi harness nhưng không chạy subprocess thực |
+| **LLM Provider** | `engine/harness/llm_provider.py` | ❌ **Chưa có** | Cần implement để loop thực sự gọi được model |
+| **Tool Executor** | `engine/tools/` | ❌ **Chưa có** | Registry + MCP Client chưa được implement |
+| **Sandbox** | `engine/sandbox/` | ❌ **Chưa có** | Local venv / Docker executor |
+| **Preset Loader** | `presets/python_backend/` | ⚠️ **YAML only** | Chưa có code đọc và apply preset |
+| **Eval Suite** | `evals/` | ❌ **Chưa có** | Cần benchmark test cases |
+
+### Bước tiếp theo ưu tiên
+
+1. `engine/harness/llm_provider.py` — Abstract connector (Anthropic / Gemini / OpenAI)
+2. Hoàn thiện `engine/harness/loop.py` — Thêm `while` loop thực sự gọi LLM → parse tool call → execute
+3. `engine/tools/registry.py` — Tool registry và subprocess executor
+4. Tích hợp `bin/agent-run` với `verify.py` — Chạy Tier 1 check tự động trước commit
+

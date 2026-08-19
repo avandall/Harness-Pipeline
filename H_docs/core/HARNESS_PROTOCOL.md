@@ -224,3 +224,41 @@ Mỗi iteration trong `H_docs/runtime/ITERATIONS/iter_NNN.md` phải có:
 - State Out: <trạng thái cuối iteration>
 - Next Action: <bước tiếp theo>
 ```
+
+---
+
+## 9. Python Engine Layer (`engine/`)
+
+Bên cạnh `harness.sh` (shell orchestrator), workspace có thêm **`engine/` Python package** — đây là tầng thực thi stateful dùng cho Agent tích hợp trong code. Hai lớp **bổ sung** nhau, không thay thế.
+
+| Thành phần | Vai trò |
+|------------|---------|
+| `H_docs/harness.sh` | Shell orchestrator cho Dual-Model mode, quản lý iteration lifecycle, gọi `agy` CLI |
+| `engine/` Python package | Thư viện Event Logging, Security Gate, Cost Tracking — dùng trong Agent code |
+| `H_docs/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
+
+### Session Log Location
+
+Session JSONL files (append-only, ground truth):
+```
+H_docs/runtime/session_<TASK_ID>.jsonl  ← KHÔNG git-track (xem .gitignore)
+```
+
+### CLI Entry Point (Skeleton)
+
+```bash
+# Khởi tạo session mới
+python3 bin/agent-run --task TASK-001
+
+# Resume từ session log bị gián đoạn
+python3 bin/agent-run --task TASK-001 --resume
+```
+
+> ⚠️ **`engine/harness/loop.py` là skeleton** — log events nhưng chưa có LLM connector thực sự.
+> Để có full autonomous loop, cần implement `engine/harness/llm_provider.py`.
+
+### Quy tắc BẮTBUỘC khi dùng Engine
+
+1. **Trước mọi commit**: `python3 H_docs/scripts/verify.py` phải `Status: PASS`
+2. **Event log** phải được append đúng loại: `TOOL_CALL` → `TOOL_RESULT` → không bỏ bước
+3. **Vault Proxy**: Không bao giờ truyền raw API key vào `EventLog.append()` payload

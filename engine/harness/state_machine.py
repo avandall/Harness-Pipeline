@@ -1,7 +1,7 @@
 """State Machine for Agent Ralph Loop (Layer 2 - Harness)."""
 
 from enum import Enum
-from typing import List, Optional
+from typing import List
 
 
 class PipelineState(str, Enum):

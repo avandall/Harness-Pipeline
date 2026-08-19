@@ -6,10 +6,9 @@ and logs all actions to durable event session storage.
 
 from pathlib import Path
 from typing import Any, Dict, Optional
-from engine.harness.state_machine import PipelineState, StateMachine
+from engine.harness.state_machine import StateMachine
 from engine.security.hitl_gate import HumanInTheLoopGate
 from engine.security.vault_proxy import SecretVaultProxy
-from engine.session.compactor import truncate_log
 from engine.session.event_log import EventLog, EventType
 
 

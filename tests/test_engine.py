@@ -1,18 +1,14 @@
 """Unit tests for Core Engine components."""
 
-import os
 from pathlib import Path
 import tempfile
-import pytest
 
 from engine.session.compactor import truncate_log
 from engine.session.event_log import EventLog, EventType
 from engine.security.hitl_gate import HumanInTheLoopGate
 from engine.security.vault_proxy import SecretVaultProxy
 from engine.observability.cost_tracker import CostTracker
-from engine.observability.tracer import PipelineTracer
 from engine.harness.loop import RalphLoopRunner
-from engine.harness.state_machine import PipelineState, StateMachine
 
 
 def test_log_compactor():

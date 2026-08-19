@@ -1,6 +1,5 @@
 """Log compactor and token optimizer for extracting essential tracebacks and error messages."""
 
-import re
 from typing import List
 
 

@@ -17,36 +17,31 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Import shared compactor from engine (single source of truth for log truncation)
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from engine.session.compactor import truncate_log
+except ImportError:
+    # Fallback if engine package is not installed — keep standalone function
+    def truncate_log(log_text: str, max_lines: int = 20) -> str:  # type: ignore[misc]
+        """Fallback: Cắt tỉa log rác nếu engine package chưa có."""
+        if not log_text or not log_text.strip():
+            return ""
+        lines = log_text.strip().split("\n")
+        if len(lines) <= max_lines:
+            return "\n".join(lines)
+        error_lines = []
+        in_traceback = False
+        for line in lines:
+            if any(keyword in line for keyword in ["Traceback", "FAILED", "ERROR", "CRITICAL", "ERRORS"]):
+                in_traceback = True
+            if in_traceback or line.startswith("E   ") or "Error:" in line or line.startswith("FAILED "):
+                error_lines.append(line)
+        if error_lines:
+            return "\n".join(error_lines[-max_lines:])
+        return "\n".join(lines[-max_lines:])
 
-def truncate_log(log_text: str, max_lines: int = 20) -> str:
-    """Cắt tỉa log rác, chỉ giữ lại các dòng Error, Traceback và Line chính."""
-    if not log_text or not log_text.strip():
-        return ""
 
-    lines = log_text.strip().split("\n")
-    if len(lines) <= max_lines:
-        return "\n".join(lines)
-
-    error_lines = []
-    in_traceback = False
-
-    for line in lines:
-        if any(
-            keyword in line
-            for keyword in ["Traceback", "FAILED", "ERROR", "CRITICAL", "ERRORS"]
-        ):
-            in_traceback = True
-        if (
-            in_traceback
-            or line.startswith("E   ")
-            or "Error:" in line
-            or line.startswith("FAILED ")
-        ):
-            error_lines.append(line)
-
-    if error_lines:
-        return "\n".join(error_lines[-max_lines:])
-    return "\n".join(lines[-max_lines:])
 
 
 def check_tool_installed(tool_name: str) -> bool:

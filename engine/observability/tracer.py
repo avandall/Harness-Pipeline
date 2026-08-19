@@ -1,7 +1,7 @@
 """OpenTelemetry Tracer for Pipeline execution (Layer 6 - Observability)."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 
 class PipelineTracer:
