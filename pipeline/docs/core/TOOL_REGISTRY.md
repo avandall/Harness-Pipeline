@@ -98,7 +98,7 @@
 | `database` | Query DB trực tiếp | ⚠️ Chỉ dùng read-only trong dev |
 | `chrome_devtools` | Debug chrome | Khi cần debug chrome |
 
-> **Để thêm MCP server mới:** Phải có approval từ `H_docs/context/BOUNDARIES.md` trước.
+> **Để thêm MCP server mới:** Phải có approval từ `pipeline/docs/context/BOUNDARIES.md` trước.
 
 ---
 

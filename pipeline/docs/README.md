@@ -10,25 +10,26 @@
 ```
 pipeline/
 ├── setup.sh                        # 🚀 Script 1-click install pipeline sang dự án mới
-├── bin/                            # CLI executables (agent-run, agent-eval)
-│   └── agent-run
-├── engine/                         # 🧠 Core Python Engine
-│   ├── harness/                    # Ralph Loop Runner & State Machine
-│   ├── session/                    # Append-only JSONL Event Log & Compactor
-│   ├── security/                   # Vault Proxy & Human-in-the-Loop Gate
-│   └── observability/              # Tracer & Cost Tracker
+├── USER_GUIDE.md                   # 📖 Cẩm nang hướng dẫn sử dụng dành cho người dùng
+├── scripts/                        # 🛠️ All Executables (harness.sh, verify.py, setup.sh, agent-run)
+│   ├── harness.sh                  # ⚡ Main Ralph Loop Orchestrator Script
+│   ├── verify.py                   # 🔍 Tier 1 Deterministic Verification Engine
+│   ├── setup.sh                    # 🚀 Installer script
+│   └── agent-run                   # 🧠 Core Engine CLI
+├── engine/                         # 🧠 Core Python Engine (harness, session, security, observability)
 ├── docs/                           # 📝 Instruction Layer & Docs System
 │   ├── core/                       # 🔒 FIXED: AGENT_CONSTITUTION.md, HARNESS_PROTOCOL.md, etc.
 │   ├── context/                    # ✏️ MUTABLE: PROJECT_BRIEF.md, TECH_CONTEXT.md, Tasks_list.md, BOUNDARIES.md
-│   ├── runtime/                    # 🤖 AUTO-GENERATED: CURRENT_TASK.md, STATUS.md, VERIFICATION_REPORT.md, session_*.jsonl
-│   ├── scripts/                    # 🛠️ verify.py (Tier 1 Deterministic Verification)
-│   └── harness.sh                  # ⚡ Main Ralph Loop Orchestrator Script
-├── presets/                        # 🔌 Domain Presets (python_backend, node_react)
+│   └── runtime/                    # 🤖 AUTO-GENERATED: CURRENT_TASK.md, STATUS.md, VERIFICATION_REPORT.md
+│       ├── sessions/               # 📊 Append-only JSONL Event Logs (session_*.jsonl)
+│       ├── BLOCKERS/               # 🚫 Blocker reports
+│       └── ITERATIONS/             # 📸 Iteration snapshots
+├── presets/                        # 🔌 Domain Presets (python_backend, node_react, go, polyglot)
 └── tests/                          # 🧪 Engine Unit Tests
 
 # Root Wrappers (tự sinh bởi setup.sh ở root dự án):
-├── harness.sh                      # -> trỏ tới ./pipeline/docs/harness.sh
-└── bin/agent-run                   # -> trỏ tới ./pipeline/bin/agent-run
+├── harness.sh                      # -> trỏ tới ./pipeline/scripts/harness.sh
+└── bin/agent-run                   # -> trỏ tới python3 ./pipeline/scripts/agent-run
 ```
 
 ---

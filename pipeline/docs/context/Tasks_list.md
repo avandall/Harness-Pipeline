@@ -50,7 +50,7 @@ Ngày tạo:        [YYYY-MM-DD]
 
 #### Scope (Phạm vi)
 - **Files được sửa/tạo:** `[thư mục/files liên quan]`
-- **Files cấm đụng:** `H_docs/core/**`, `[files ngoài scope]`
+- **Files cấm đụng:** `pipeline/docs/core/**`, `[files ngoài scope]`
 
 #### Verification Commands
 ```bash

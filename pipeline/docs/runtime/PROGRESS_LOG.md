@@ -51,10 +51,10 @@
 **Step:** N/A — Initial setup
 
 #### Actions Taken
-1. Đọc H_docs/core/AGENT_CONSTITUTION.md
-2. Đọc H_docs/context/PROJECT_BRIEF.md
-3. Đọc H_docs/runtime/CURRENT_TASK.md
-4. Đọc H_docs/context/BOUNDARIES.md
+1. Đọc pipeline/docs/core/AGENT_CONSTITUTION.md
+2. Đọc pipeline/docs/context/PROJECT_BRIEF.md
+3. Đọc pipeline/docs/runtime/CURRENT_TASK.md
+4. Đọc pipeline/docs/context/BOUNDARIES.md
 
 #### Result
 - **Outcome:** PASS
@@ -79,9 +79,9 @@
 #### Actions Taken
 1. Đọc và phân tích 12 trang của file `Capstone - Usage Metering & Billing Engine.pdf`.
 2. Trích xuất 5 Ground Rules, 4 Concerns (Usage Metering, Quota Enforcement, Cost Calculation, Stripe Integration), Definition of Done, 5 Phases Roadmap, 5 Acceptance Probes, Submission Pack, và 6-minute Demo Flow.
-3. Cập nhật chi tiết [PROJECT_BRIEF.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/PROJECT_BRIEF.md).
-4. Cập nhật [TECH_CONTEXT.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/TECH_CONTEXT.md) với chi tiết Prisma DB Schema, API contracts, AI token pricing math (cached input, reasoning tokens), Integer cents rules, Stripe CLI setup, và 5 Probes alignment.
-5. Cập nhật [Tasks_list.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/Tasks_list.md) thay thế các task mẫu bằng 8 tasks kĩ thuật thực tế theo 5 Phases từ PDF brief.
+3. Cập nhật chi tiết [PROJECT_BRIEF.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/PROJECT_BRIEF.md).
+4. Cập nhật [TECH_CONTEXT.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/TECH_CONTEXT.md) với chi tiết Prisma DB Schema, API contracts, AI token pricing math (cached input, reasoning tokens), Integer cents rules, Stripe CLI setup, và 5 Probes alignment.
+5. Cập nhật [Tasks_list.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/Tasks_list.md) thay thế các task mẫu bằng 8 tasks kĩ thuật thực tế theo 5 Phases từ PDF brief.
 
 #### Result
 - **Outcome:** PASS
@@ -104,14 +104,14 @@
 
 #### Actions Taken
 1. Tiếp nhận quy tắc mới trong `.agents/AGENTS.md`: *"Luôn dùng Python nếu có thể."*
-2. Chuyển đổi toàn bộ [TECH_CONTEXT.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/TECH_CONTEXT.md) sang 100% Python Stack:
+2. Chuyển đổi toàn bộ [TECH_CONTEXT.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/TECH_CONTEXT.md) sang 100% Python Stack:
    - Framework: FastAPI + Uvicorn + Pydantic v2
    - ORM: SQLAlchemy 2.0 (AsyncSession) + Alembic
    - SDK: Stripe Python SDK (`stripe`)
    - Test Runner: Pytest (`pytest`, `pytest-asyncio`, `httpx`)
    - Replaced Node.js/Prisma folder structure with Python `app/` folder structure & `app/db/models.py`.
-3. Cập nhật [PROJECT_BRIEF.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/PROJECT_BRIEF.md) phản ánh Python stack & `chat_pricing_config.py`.
-4. Cập nhật [Tasks_list.md](file:///home/avandall1999/Projects/Capstone_usage_metering/H_docs/context/Tasks_list.md) chuyển đổi tất cả file scopes, models, và verification commands (`pytest`, `alembic`, `uvicorn`) sang Python.
+3. Cập nhật [PROJECT_BRIEF.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/PROJECT_BRIEF.md) phản ánh Python stack & `chat_pricing_config.py`.
+4. Cập nhật [Tasks_list.md](file:///home/avandall1999/Projects/Capstone_usage_metering/pipeline/docs/context/Tasks_list.md) chuyển đổi tất cả file scopes, models, và verification commands (`pytest`, `alembic`, `uvicorn`) sang Python.
 
 #### Result
 - **Outcome:** PASS
@@ -134,7 +134,7 @@
 
 #### Actions Taken
 1. Đọc `AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `PLAN.md`.
-2. Tạo `H_docs/runtime/PLAN.md` chi tiết cho TASK-001 với 4 atomic steps.
+2. Tạo `pipeline/docs/runtime/PLAN.md` chi tiết cho TASK-001 với 4 atomic steps.
 3. Cập nhật `Tasks_list.md` chuyển `TASK-001` sang `[/] IN_PROGRESS`.
 4. Tạo môi trường virtualenv `venv` và file `requirements.txt` (FastAPI, SQLAlchemy 2.0, Alembic, asyncpg, psycopg2-binary, Pydantic v2, Stripe, Pytest).
 5. Tạo `.env.example`, `.env`, `docker-compose.yml` (PostgreSQL 15-alpine container).
@@ -190,7 +190,7 @@
 
 #### Actions Taken
 1. Đọc `AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`.
-2. Tạo `H_docs/runtime/PLAN.md` mới cho `TASK-003` Quota Enforcement Engine.
+2. Tạo `pipeline/docs/runtime/PLAN.md` mới cho `TASK-003` Quota Enforcement Engine.
 3. Tạo `app/services/quota_service.py` kiểm tra subscription status (402 past_due) và cộng dồn API calls / tokens trong period hiện tại để so sánh với plan limits (429 quota exceeded).
 4. Tích hợp `QuotaService.check_and_enforce_quota()` vào endpoint `POST /generate` trong `app/api/generate.py` (thực hiện sau khi kiểm tra cached idempotency record).
 5. Viết test suite `tests/test_boundary_quota.py` xác minh PROBE 2 (chặn HTTP 402 cho subscription past_due, cho phép request mốc trần 5/5 boundary, từ chối HTTP 429 cho request vượt trần 6/5, và replay cached response thành công).
@@ -219,9 +219,9 @@
 **Duration:** ~5 phút
 
 #### Actions Taken
-1. Đọc `H_docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
-2. Tạo `H_docs/runtime/PLAN.md` mới cho `TASK-004` Stripe Webhook Signature Verification.
-3. Cập nhật `H_docs/context/Tasks_list.md` chuyển `TASK-004` sang `[/] IN_PROGRESS`.
+1. Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
+2. Tạo `pipeline/docs/runtime/PLAN.md` mới cho `TASK-004` Stripe Webhook Signature Verification.
+3. Cập nhật `pipeline/docs/context/Tasks_list.md` chuyển `TASK-004` sang `[/] IN_PROGRESS`.
 4. Tạo `app/services/stripe_service.py` thực hiện `stripe.Webhook.construct_event()` với raw request payload bytes và secret `STRIPE_WEBHOOK_SECRET`.
 5. Tạo router `POST /webhooks/stripe` trong `app/api/webhooks.py` nhận raw bytes và header `stripe-signature`, tích hợp vào `app/main.py`.
 6. Bổ sung `StripeService` vào `app/services/__init__.py`.
@@ -251,9 +251,9 @@
 **Duration:** ~5 phút
 
 #### Actions Taken
-1. Đọc `H_docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
-2. Tạo `H_docs/runtime/PLAN.md` mới cho `TASK-005` Stripe Event Deduplication & Plan Sync (Free -> Pro).
-3. Cập nhật `H_docs/context/Tasks_list.md` chuyển `TASK-005` sang `[/] IN_PROGRESS`.
+1. Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
+2. Tạo `pipeline/docs/runtime/PLAN.md` mới cho `TASK-005` Stripe Event Deduplication & Plan Sync (Free -> Pro).
+3. Cập nhật `pipeline/docs/context/Tasks_list.md` chuyển `TASK-005` sang `[/] IN_PROGRESS`.
 4. Mở rộng `app/services/stripe_service.py` với method `process_webhook_event`:
    - Lớp 1: Deduplication check bằng `ProcessedWebhook(id=event_id)` DB query. Đã xử lý -> Trả về HTTP 200 with status `already_processed`.
    - Lớp 2: Event handler cho `checkout.session.completed` (nâng cấp Subscription tenant sang gói `pro`, status `active`).
@@ -290,9 +290,9 @@
 **Duration:** ~5 phút
 
 #### Actions Taken
-1. Đọc `H_docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
-2. Tạo `H_docs/runtime/PLAN.md` mới cho `TASK-006` AI Token Pricing Math & Rollup (`GET /usage`).
-3. Cập nhật `H_docs/context/Tasks_list.md` chuyển `TASK-006` sang `[/] IN_PROGRESS`.
+1. Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
+2. Tạo `pipeline/docs/runtime/PLAN.md` mới cho `TASK-006` AI Token Pricing Math & Rollup (`GET /usage`).
+3. Cập nhật `pipeline/docs/context/Tasks_list.md` chuyển `TASK-006` sang `[/] IN_PROGRESS`.
 4. Tạo `app/config/chat_pricing_config.py` chứa định nghĩa hằng số giá token AI bằng integer micro-cents (input $2.50/1M = 250 micro-cents/token, cached_input $1.25/1M = 125 micro-cents/token, output $10.00/1M = 1,000 micro-cents/token, reasoning $10.00/1M = 1,000 micro-cents/token) và các hàm `calculate_token_cost_micro_cents` & `calculate_token_cost_cents`.
 5. Tạo `app/services/cost_service.py` xây dựng `CostService` thực hiện SQL rollup tổng hợp usage theo tháng (`api_calls`, `ai_tokens` breakdown, `cost` in cents & formatted currency).
 6. Tạo `app/api/usage.py` endpoint `GET /usage` nhận `X-Tenant-ID` header và `month` query parameter, đăng ký router trong `app/main.py`.
@@ -325,9 +325,9 @@
 **Duration:** ~5 phút
 
 #### Actions Taken
-1. Đọc `H_docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
-2. Tạo `H_docs/runtime/PLAN.md` cho `TASK-007` Submission Pack & 5 Acceptance Probes Verification.
-3. Cập nhật `H_docs/context/Tasks_list.md` chuyển `TASK-007` sang `[/] IN_PROGRESS`.
+1. Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`, `BOUNDARIES.md`.
+2. Tạo `pipeline/docs/runtime/PLAN.md` cho `TASK-007` Submission Pack & 5 Acceptance Probes Verification.
+3. Cập nhật `pipeline/docs/context/Tasks_list.md` chuyển `TASK-007` sang `[/] IN_PROGRESS`.
 4. Tạo `capstone.yaml` chứa thông tin evaluator manifest, stack metadata, và các lệnh runner (`run`, `seed`, `test`, `base_url`).
 5. Tạo `BUILDLOG.md` tổng hợp toàn bộ lịch sử xây dựng, quyết định kỹ thuật ($0 Stack, micro-cents, unique DB constraints), và quy trình AI-assisted harness.
 6. Chạy `.venv/bin/pytest -v` và tạo `EVIDENCE.md` trình bày ma trận 5 Acceptance Probes (PROBE 1 - PROBE 5), code assertions, và log thực thi 14/14 passed.
@@ -357,9 +357,9 @@
 **Duration:** ~5 phút
 
 #### Actions Taken
-1. Đọc `H_docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`.
-2. Tạo `H_docs/runtime/PLAN.md` cho `TASK-008` Demo Script Rehearsal & Failure Scenario Verification.
-3. Cập nhật `H_docs/context/Tasks_list.md` chuyển `TASK-008` sang `[/] IN_PROGRESS`.
+1. Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`, `Tasks_list.md`, `STATUS.md`.
+2. Tạo `pipeline/docs/runtime/PLAN.md` cho `TASK-008` Demo Script Rehearsal & Failure Scenario Verification.
+3. Cập nhật `pipeline/docs/context/Tasks_list.md` chuyển `TASK-008` sang `[/] IN_PROGRESS`.
 4. Tạo `app/db/demo_seed.py` seed dữ liệu tenant `tenant_demo_01` (Free plan) đã prefilled 999 usage events sẵn sàng cho demo mốc 1,000 boundary và 1,001 HTTP 429 limit.
 5. Tạo `tests/test_demo_rehearsal.py` tự động hóa và kiểm tra 6 bước demo (§13 Capstone PDF):
    - Step 1: Quota boundary & HTTP 429 Too Many Requests.
@@ -371,7 +371,7 @@
 6. Tạo executable bash script `demo-rehearsal.sh` khởi chạy demo rehearsal flow.
 7. Chạy `./demo-rehearsal.sh` và `.venv/bin/pytest` pass 100% (15/15 tests passed).
 8. Cập nhật `Tasks_list.md` (`TASK-008` [x] DONE) và `STATUS.md` (`Phase: ALL_DONE`).
-9. Tạo `H_docs/runtime/PROOF_OF_SOLUTION.md` tổng kết minh chứng hoàn tất toàn bộ 8/8 tasks dự án.
+9. Tạo `pipeline/docs/runtime/PROOF_OF_SOLUTION.md` tổng kết minh chứng hoàn tất toàn bộ 8/8 tasks dự án.
 
 #### Result
 - **Outcome:** PASS

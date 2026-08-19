@@ -10,7 +10,7 @@
 ## 0. Quy trình Phản biện 2 Lớp (Two-Tier Review)
 
 ```
-[Mã nguồn mới] ──► [Tier 1: python H_docs/scripts/verify.py] ──► [PASS 100%] ──► [Tier 2: Cognitive LLM Review (git diff)] ──► [APPROVED]
+[Mã nguồn mới] ──► [Tier 1: python pipeline/docs/scripts/verify.py] ──► [PASS 100%] ──► [Tier 2: Cognitive LLM Review (git diff)] ──► [APPROVED]
 ```
 
 - **Tier 1 (Automated Mechanical Checks):** Do CLI Tools đảm nhận (`ruff`, `mypy`, `bandit`, `pytest`). Bắt 100% lỗi cú pháp, kiểu dữ liệu, lỗ hổng bảo mật cơ bản và runtime crash.
@@ -21,7 +21,7 @@
 ## 1. Tier 2 Cognitive Review Checklist
 
 Thực hiện checklist này trên `git diff` **sau khi Tier 1 đã PASS 100%** (PHASE 5 trong WORKFLOW_STANDARDS).
-Kết quả ghi vào `H_docs/runtime/DEBATE_LOG.md`.
+Kết quả ghi vào `pipeline/docs/runtime/DEBATE_LOG.md`.
 
 ### 1.1 Correctness (Tính đúng đắn)
 - [ ] Output có đáp ứng **tất cả** acceptance criteria trong PLAN.md không?
@@ -96,9 +96,9 @@ Reviewer (--review-model) → đọc git diff + VERIFICATION_REPORT.md → DEBAT
 ### Input của Reviewer Model
 Reviewer **chỉ được cung cấp** (token-efficient):
 1. `git diff HEAD~1 HEAD` — các thay đổi cụ thể
-2. Summary 1 dòng từ `python3 H_docs/scripts/verify.py --summary`
-3. `H_docs/runtime/VERIFICATION_REPORT.md` — nếu cần xem chi tiết lỗi Tier 1
-4. Checklist từ `H_docs/core/REVIEW_PROTOCOL.md` Section 1
+2. Summary 1 dòng từ `python3 pipeline/docs/scripts/verify.py --summary`
+3. `pipeline/docs/runtime/VERIFICATION_REPORT.md` — nếu cần xem chi tiết lỗi Tier 1
+4. Checklist từ `pipeline/docs/core/REVIEW_PROTOCOL.md` Section 1
 
 Reviewer **KHÔNG đọc lại** toàn bộ codebase → tiết kiệm token.
 
@@ -112,10 +112,10 @@ Review Result: REJECTED: <lý do cụ thể, tối đa 5 dòng>
 ### Kích hoạt Dual-Model Review
 ```bash
 # Review bằng model rẻ hơn, góc nhìn khác
-./H_docs/harness.sh --review-model gemini-3.6-flash-low
+./pipeline/docs/harness.sh --review-model gemini-3.6-flash-low
 
 # Review bằng model cao cấp hơn cho task quan trọng
-./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
+./pipeline/docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
 ```
 
 ### Manual Dual-Model (không dùng harness)

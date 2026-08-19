@@ -15,13 +15,13 @@
 ```
 ✅ [Đường dẫn thư mục/file AI được phép làm việc, ví dụ: src/**]
 ✅ [Ví dụ: tests/**]
-✅ [Ví dụ: H_docs/runtime/**]
+✅ [Ví dụ: pipeline/docs/runtime/**]
 ```
 
 ### AI KHÔNG được chạm vào:
 ```
 ❌ [Đường dẫn file/thư mục cấm sửa, ví dụ: .env]
-❌ [Ví dụ: H_docs/core/** — Bộ quy chuẩn cố định]
+❌ [Ví dụ: pipeline/docs/core/** — Bộ quy chuẩn cố định]
 ❌ [Ví dụ: production configuration / deployment scripts chưa được chỉ định]
 ```
 
@@ -61,7 +61,7 @@ KHÔNG được phép gọi:
 ### AI có thể tự quyết định:
 ```
 ✅ Cấu trúc file/folder bên trong phạm vi cho phép
-✅ Naming conventions (theo H_docs/core/CODE_STANDARDS.md)
+✅ Naming conventions (theo pipeline/docs/core/CODE_STANDARDS.md)
 ✅ Thuật toán & chi tiết implementation
 ✅ Local error handling & validation logic
 ```
@@ -77,7 +77,7 @@ KHÔNG được phép gọi:
 ```
 ❌ Hardcode credentials, API keys, secrets vào source code
 ❌ Tắt security checks, validation hoặc authentication
-❌ Sửa đổi files trong H_docs/core/
+❌ Sửa đổi files trong pipeline/docs/core/
 ❌ Xóa bớt unit tests / integration tests sẵn có
 ```
 
@@ -118,7 +118,7 @@ Khi AI gặp tình huống chưa rõ ràng hoặc nằm ngoài ranh giới:
 
 ```
 1. DỪNG LẠI ngay lập tức.
-2. Tạo H_docs/runtime/BLOCKED.md mô tả chi tiết lý do.
+2. Tạo pipeline/docs/runtime/BLOCKED.md mô tả chi tiết lý do.
 3. Đặt câu hỏi cụ thể cho Human.
 4. Chờ Human phản hồi và cập nhật BOUNDARIES.md trước khi tiếp tục.
 ```

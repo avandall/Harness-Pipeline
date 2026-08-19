@@ -29,7 +29,7 @@ Cơ chế kiểm soát khi hệ thống bị overload: AI dừng lại thay vì 
 Trạng thái khi AI không thể tiến tiếp mà không có quyết định từ human. Được signal bằng file `BLOCKED.md`.
 
 **Boundaries (Giới hạn)**
-Phạm vi quyền hạn của AI trong một task cụ thể. Được định nghĩa trong `H_docs/context/BOUNDARIES.md`.
+Phạm vi quyền hạn của AI trong một task cụ thể. Được định nghĩa trong `pipeline/docs/context/BOUNDARIES.md`.
 
 ---
 
@@ -93,7 +93,7 @@ Nguyên tắc: chỉ thay đổi những gì cần thiết cho task hiện tại
 Vòng lặp tự trị lấy cảm hứng từ nhân vật Ralph Wiggum (The Simpsons): kiên trì qua nhiều iterations, mỗi lần bắt đầu fresh, dùng filesystem làm memory, git làm safety net.
 
 **Runtime Docs (Tài liệu chạy)**
-Các docs được AI tự tạo trong `H_docs/runtime/` trong quá trình thực thi task. Bao gồm PLAN.md, STATUS.md, PROGRESS_LOG.md, v.v.
+Các docs được AI tự tạo trong `pipeline/docs/runtime/` trong quá trình thực thi task. Bao gồm PLAN.md, STATUS.md, PROGRESS_LOG.md, v.v.
 
 ---
 

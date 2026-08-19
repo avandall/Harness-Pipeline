@@ -115,7 +115,7 @@ Demo Rehearsal verification executed via `./demo-rehearsal.sh`:
 ## 5. Retrospective (Theo AGENT CONSTITUTION §10)
 
 ### What Worked Well
-1. **Harness Protocol & File Memory**: Việc ghi nhận chi tiết trạng thái qua `H_docs/runtime/STATUS.md`, `PROGRESS_LOG.md`, và `PLAN.md` giúp công việc tiến triển liên tục, có định hướng rõ ràng và không phụ thuộc vào context window ngắn hạn.
+1. **Harness Protocol & File Memory**: Việc ghi nhận chi tiết trạng thái qua `pipeline/docs/runtime/STATUS.md`, `PROGRESS_LOG.md`, và `PLAN.md` giúp công việc tiến triển liên tục, có định hướng rõ ràng và không phụ thuộc vào context window ngắn hạn.
 2. **Atomic Commits & Verification**: Thực hiện commit nhỏ theo từng feature/probe giúp rollback và review code cực kỳ an toàn.
 3. **100% Python Stack Alignment**: Việc chuyển đổi toàn bộ tech stack sang FastAPI, SQLAlchemy 2.0, và Pytest tạo ra một bộ codebase sạch sẽ, dễ bảo trì, chạy mượt mà và tận dụng tốt `pytest-asyncio`.
 

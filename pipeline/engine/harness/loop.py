@@ -23,9 +23,8 @@ class RalphLoopRunner:
     ):
         self.task_id: str = task_id
         self.workspace_dir: Path = Path(workspace_dir)
-        docs_runtime = self.workspace_dir / "pipeline" / "docs" / "runtime"
-        if not docs_runtime.exists():
-            docs_runtime = self.workspace_dir / "pipeline/docs" / "runtime"
+        docs_runtime = self.workspace_dir / "pipeline" / "docs" / "runtime" / "sessions"
+        docs_runtime.mkdir(parents=True, exist_ok=True)
         self.log_file: Path = log_file or (docs_runtime / f"session_{task_id}.jsonl")
         self.event_log: EventLog = EventLog(self.log_file)
         self.state_machine: StateMachine = StateMachine()

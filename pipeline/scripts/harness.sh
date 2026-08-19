@@ -14,9 +14,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "${SCRIPT_DIR}/core" ]]; then
-  DOCS_DIR="${SCRIPT_DIR}"
-elif [[ -d "./pipeline/docs" ]]; then
+if [[ -d "${SCRIPT_DIR}/../docs/core" ]]; then
+  DOCS_DIR="$(cd "${SCRIPT_DIR}/../docs" && pwd)"
+elif [[ -d "./pipeline/docs/core" ]]; then
   DOCS_DIR="./pipeline/docs"
 else
   DOCS_DIR="./pipeline/docs"
@@ -395,7 +395,7 @@ execute_iteration_single_model() {
   local iter="$1"
 
   # ─── AUTOMATED AGY CLI EXECUTION ─────────────────────────────────────────
-  local iter_prompt="Đọc pipeline/docs/core/AGENT_CONSTITUTION.md, pipeline/docs/context/Tasks_list.md và pipeline/docs/runtime/STATUS.md. Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md. Đọc pipeline/docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md). Thực hiện 1 bước atomic tiếp theo trong task đó theo quy trình Harness Protocol. Ở Phase 4 (VERIFY), BẮT BUỘC chạy 'python3 pipeline/docs/scripts/verify.py' để kiểm định Tier 1 (Linter/Type/Security/Test) và kiểm tra pipeline/docs/runtime/VERIFICATION_REPORT.md. NẾU VERIFICATION_REPORT có lỗi, hãy đọc log ngắn gọn trong đó để sửa ngay. Ở Phase 5 (REVIEW), thực hiện Tier 2 Cognitive Review dựa trên git diff và pipeline/docs/core/REVIEW_PROTOCOL.md. BẮT BUỘC CẬP NHẬT pipeline/docs/runtime/STATUS.md, pipeline/docs/runtime/PROGRESS_LOG.md và PLAN.md RA FILESYSTEM để lưu progression context cho Ralph loop. QUY TẮC COMMIT: KHÔNG THỰC HIỆN GIT COMMIT TRONG CÁC ITERATION TRUNG GIAN. CHỈ CHẠY GIT COMMIT KHI THỰC SỰ HOÀN THÀNH 1 TASK VÀ ĐÁNH DẤU [x] DONE TRONG Tasks_list.md với commit message format: [TASK-ID] <type>(<scope>): <mô tả ngắn gọn task đã hoàn thành>. NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào file pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật dòng của task đó trong pipeline/docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo. KHÔNG TẠO file BLOCKED.md ở root ngoại trừ khi khẩn cấp. LƯU Ý QUAN TRỌNG: Chỉ được phép ghi 'Phase: ALL_DONE' vào pipeline/docs/runtime/STATUS.md KHI VÀ CHỈ KHI TẤT CẢ các tasks trong Tasks_list.md đã được thực hiện, phản biện, xác minh pass 100% và đánh dấu [x] DONE (hoặc [!] BLOCKED). Khi đó mới cập nhật STATUS.md thành Phase: ALL_DONE và viết pipeline/docs/runtime/PROOF_OF_SOLUTION.md. Nếu dự án còn task chưa hoàn thành, giữ Phase: IN_PROGRESS."
+  local iter_prompt="Đọc pipeline/docs/core/AGENT_CONSTITUTION.md, pipeline/docs/context/Tasks_list.md và pipeline/docs/runtime/STATUS.md. Tìm task đầu tiên có trạng thái [ ] TODO hoặc [/] IN_PROGRESS trong Tasks_list.md. Đọc pipeline/docs/runtime/PLAN.md (nếu chưa có plan cho task này thì tạo PLAN.md). Thực hiện 1 bước atomic tiếp theo trong task đó theo quy trình Harness Protocol. Ở Phase 4 (VERIFY), BẮT BUỘC chạy 'python3 pipeline/scripts/verify.py' để kiểm định Tier 1 (Linter/Type/Security/Test) và kiểm tra pipeline/docs/runtime/VERIFICATION_REPORT.md. NẾU VERIFICATION_REPORT có lỗi, hãy đọc log ngắn gọn trong đó để sửa ngay. Ở Phase 5 (REVIEW), thực hiện Tier 2 Cognitive Review dựa trên git diff và pipeline/docs/core/REVIEW_PROTOCOL.md. BẮT BUỘC CẬP NHẬT pipeline/docs/runtime/STATUS.md, pipeline/docs/runtime/PROGRESS_LOG.md và PLAN.md RA FILESYSTEM để lưu progression context cho Ralph loop. QUY TẮC COMMIT: KHÔNG THỰC HIỆN GIT COMMIT TRONG CÁC ITERATION TRUNG GIAN. CHỈ CHẠY GIT COMMIT KHI THỰC SỰ HOÀN THÀNH 1 TASK VÀ ĐÁNH DẤU [x] DONE TRONG Tasks_list.md với commit message format: [TASK-ID] <type>(<scope>): <mô tả ngắn gọn task đã hoàn thành>. NẾU GẶP BLOCKER mà không thể tự giải quyết: 1) Viết báo cáo chi tiết vào file pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md. 2) Cập nhật dòng của task đó trong pipeline/docs/context/Tasks_list.md thành [!] BLOCKED. 3) Cập nhật STATUS.md để chuyển sang task TODO tiếp theo. KHÔNG TẠO file BLOCKED.md ở root ngoại trừ khi khẩn cấp. LƯU Ý QUAN TRỌNG: Chỉ được phép ghi 'Phase: ALL_DONE' vào pipeline/docs/runtime/STATUS.md KHI VÀ CHỈ KHI TẤT CẢ các tasks trong Tasks_list.md đã được thực hiện, phản biện, xác minh pass 100% và đánh dấu [x] DONE (hoặc [!] BLOCKED). Khi đó mới cập nhật STATUS.md thành Phase: ALL_DONE và viết pipeline/docs/runtime/PROOF_OF_SOLUTION.md. Nếu dự án còn task chưa hoàn thành, giữ Phase: IN_PROGRESS."
 
   log_info "[SINGLE-MODEL] Launching agy for Iteration ${iter}..."
   _run_agy_with_retry "$iter_prompt" "$PRINT_TIMEOUT" "$iter"
@@ -508,7 +508,7 @@ Thực hiện các Phase sau theo pipeline/docs/core/WORKFLOW_STANDARDS.md:
   - PHASE 1 (SPEC): Xác định acceptance criteria nếu chưa có.
   - PHASE 2 (PLAN): Chia bước nếu chưa có PLAN.md.
   - PHASE 3 (EXECUTE): Thực thi 1 bước atomic tiếp theo.
-  - PHASE 4 (VERIFY): BẮT BUỘC chạy 'python3 pipeline/docs/scripts/verify.py'.
+  - PHASE 4 (VERIFY): BẮT BUỘC chạy 'python3 pipeline/scripts/verify.py'.
     Nếu VERIFICATION_REPORT.md có lỗi → sửa ngay và chạy lại verify.py cho đến khi PASS.
 
 ⚠️ DỪNG LẠI SAU PHASE 4 — KHÔNG tự thực hiện Phase 5 (Review), Phase 6 (Commit), hay Phase 7 (Report).
@@ -528,7 +528,7 @@ LƯU Ý: Chỉ ghi 'Phase: ALL_DONE' vào STATUS.md khi TẤT CẢ tasks đã pa
 
   # ── STEP 2: Collect context for reviewer (token-efficient) ────────────────
   local tier1_summary
-  tier1_summary=$(python3 pipeline/docs/scripts/verify.py --summary 2>/dev/null \
+  tier1_summary=$(python3 pipeline/scripts/verify.py --summary 2>/dev/null \
     || echo "TIER1: UNKNOWN (verify.py failed to run)")
 
   # Cap git diff at ~400 lines to control token cost while covering most atomic commits
@@ -585,7 +585,7 @@ ${rejection_reason}
 
 Đọc đầy đủ pipeline/docs/runtime/DEBATE_LOG.md để hiểu tất cả issues được nêu ra.
 Sửa các vấn đề được chỉ ra (ưu tiên CRITICAL và HIGH trước).
-Sau khi sửa, BẮT BUỘC chạy lại 'python3 pipeline/docs/scripts/verify.py' và đảm bảo PASS.
+Sau khi sửa, BẮT BUỘC chạy lại 'python3 pipeline/scripts/verify.py' và đảm bảo PASS.
 
 ⚠️ DỪNG SAU PHASE 4 — KHÔNG tự làm Phase 5 (Review). Reviewer sẽ kiểm tra lại."
       if ! _run_agy_with_retry "$fix_prompt" "$PRINT_TIMEOUT" "$iter"; then
@@ -594,7 +594,7 @@ Sau khi sửa, BẮT BUỘC chạy lại 'python3 pipeline/docs/scripts/verify.p
       # Refresh git diff after fix
       git_diff=$(git diff HEAD~1 HEAD 2>/dev/null | head -n 400 \
         || echo "(no diff available)")
-      tier1_summary=$(python3 pipeline/docs/scripts/verify.py --summary 2>/dev/null \
+      tier1_summary=$(python3 pipeline/scripts/verify.py --summary 2>/dev/null \
         || echo "TIER1: UNKNOWN")
     fi
   done

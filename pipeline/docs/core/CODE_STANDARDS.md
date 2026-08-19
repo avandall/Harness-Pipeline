@@ -3,7 +3,7 @@
 
 > **Trạng thái:** CORE (Fixed) | **Phiên bản:** 1.0
 >
-> Áp dụng cho mọi ngôn ngữ và framework. `H_docs/context/TECH_CONTEXT.md` sẽ override/bổ sung các rule đặc thù theo project.
+> Áp dụng cho mọi ngôn ngữ và framework. `pipeline/docs/context/TECH_CONTEXT.md` sẽ override/bổ sung các rule đặc thù theo project.
 
 ---
 
@@ -189,7 +189,7 @@ Trước mỗi commit, check:
 
 ## 9. Override Rules
 
-`H_docs/context/TECH_CONTEXT.md` có thể override bất kỳ rule nào ở trên với lý do rõ ràng.
+`pipeline/docs/context/TECH_CONTEXT.md` có thể override bất kỳ rule nào ở trên với lý do rõ ràng.
 Format override:
 ```
 ## Code Standards Override

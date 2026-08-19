@@ -23,7 +23,7 @@ User → [Long conversation → context rot → hallucination → wrong output]
 ┌────────────────────────────────────────────────────────┐
 │  LOOP:                                                 │
 │  1. Fresh agent start                                  │
-│  2. Read filesystem state (H_docs/runtime/)            │
+│  2. Read filesystem state (pipeline/docs/runtime/)            │
 │  3. Execute ONE atomic unit of work                    │
 │  4. Verify output (pass/fail)                          │
 │  5. Write results & progression state to filesystem    │
@@ -41,7 +41,7 @@ User → [Long conversation → context rot → hallucination → wrong output]
 
 ## 2. State Machine
 
-Mọi task đều đi qua các trạng thái sau (lưu trong `H_docs/runtime/STATUS.md`):
+Mọi task đều đi qua các trạng thái sau (lưu trong `pipeline/docs/runtime/STATUS.md`):
 
 ```
 INIT → PLANNING → EXECUTING → REVIEWING → COMMITTING → [IN_PROGRESS | BLOCKED | ALL_DONE]
@@ -59,7 +59,7 @@ INIT → PLANNING → EXECUTING → REVIEWING → COMMITTING → [IN_PROGRESS | 
 | `ALL_DONE` | **TOÀN BỘ** tasks trong `Tasks_list.md` đã pass, phản biện xong và marked `[x] DONE` (hoặc `[!] BLOCKED`) | runtime/PROOF_OF_SOLUTION.md |
 
 > ⚠️ **QUY TẮC BẤT BIẾN CHO STATUS.MD:**
-> AI **CHỈ ĐƯỢC PHÉP** ghi `Phase: ALL_DONE` vào `H_docs/runtime/STATUS.md` KHI VÀ CHỈ KHI tất cả các tasks trong `Tasks_list.md` đã được thực thi, phản biện, xác minh pass 100% và đánh dấu `[x] DONE` (hoặc `[!] BLOCKED`). Không bao giờ ghi `Phase: DONE` hay `Phase: DONE (TASK-xxx)` khi dự án chưa hoàn tất 100% queue.
+> AI **CHỈ ĐƯỢC PHÉP** ghi `Phase: ALL_DONE` vào `pipeline/docs/runtime/STATUS.md` KHI VÀ CHỈ KHI tất cả các tasks trong `Tasks_list.md` đã được thực thi, phản biện, xác minh pass 100% và đánh dấu `[x] DONE` (hoặc `[!] BLOCKED`). Không bao giờ ghi `Phase: DONE` hay `Phase: DONE (TASK-xxx)` khi dự án chưa hoàn tất 100% queue.
 
 ---
 
@@ -103,7 +103,7 @@ Nếu gặp ≥ 2 lần liên tiếp:
   - Cần thông tin không có trong docs
 
 → NẾU Ở OVERNIGHT MODE (Mặc định):
-  1. Ghi chi tiết sự cố vào: H_docs/runtime/BLOCKERS/<TASK_ID>.md
+  1. Ghi chi tiết sự cố vào: pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md
   2. Đánh dấu dòng task trong Tasks_list.md thành: [!] BLOCKED
   3. Bỏ qua task kẹt và tự động chọn Task [ ] TODO tiếp theo!
 
@@ -119,10 +119,10 @@ Nếu gặp ≥ 2 lần liên tiếp:
 
 ```bash
 # Kích hoạt Dual-Model Review
-./H_docs/harness.sh --review-model gemini-3.6-flash-low
+./pipeline/docs/harness.sh --review-model gemini-3.6-flash-low
 
 # Dual-Model với reviewer cao cấp hơn
-./H_docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
+./pipeline/docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
 ```
 
 > ⚠️ **Bắt buộc chỉ định tên model:** Không có model mặc định. Bỏ qua `--review-model` = single-model mode.
@@ -132,7 +132,7 @@ Nếu gặp ≥ 2 lần liên tiếp:
 ```
 ┌─ EXECUTOR (default model) ──────────────────────────────────┐
 │  Prompt A: ORIENT → SPEC → PLAN → EXECUTE → VERIFY        │
-│  Chạy: python3 H_docs/scripts/verify.py                   │
+│  Chạy: python3 pipeline/docs/scripts/verify.py                   │
 │  ⚠️ DỪNG sau PHASE 4 — KHÔNG tự chạy Phase 5, 6, 7       │
 └─────────────────────────────────────────────────────────────┘
                 │ VERIFY PASS
@@ -140,7 +140,7 @@ Nếu gặp ≥ 2 lần liên tiếp:
 ┌─ REVIEWER (--review-model) ─────────────────────────────────┐
 │  Prompt B: đọc từ REVIEWER_PROMPT_TEMPLATE.md             │
 │  Nhận: git diff (≤400 dòng) + verify.py --summary         │
-│  Ghi kết quả vào: H_docs/runtime/DEBATE_LOG.md            │
+│  Ghi kết quả vào: pipeline/docs/runtime/DEBATE_LOG.md            │
 │  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
 │  Đây là cuộc hội thoại agy MỚI HOÀN TOÀN (fresh context) │
 └─────────────────────────────────────────────────────────────┘
@@ -160,7 +160,7 @@ Nếu gặp ≥ 2 lần liên tiếp:
 
 ### Tùy chỉnh Reviewer Prompt
 
-Reviewer prompt được đọc từ `H_docs/core/REVIEWER_PROMPT_TEMPLATE.md` — **không hardcode trong harness.sh**.
+Reviewer prompt được đọc từ `pipeline/docs/core/REVIEWER_PROMPT_TEMPLATE.md` — **không hardcode trong harness.sh**.
 Thay đổi template để tùy chỉnh mà không cần sửa harness.sh.
 
 Template hỗ trợ:
@@ -212,7 +212,7 @@ Sau recovery: cập nhật `PROGRESS_LOG.md` với entry "Recovery: <lý do>"
 
 ## 8. Iteration Template
 
-Mỗi iteration trong `H_docs/runtime/ITERATIONS/iter_NNN.md` phải có:
+Mỗi iteration trong `pipeline/docs/runtime/ITERATIONS/iter_NNN.md` phải có:
 ```markdown
 # Iteration NNN
 - Date: YYYY-MM-DD HH:MM
@@ -233,15 +233,15 @@ Bên cạnh `harness.sh` (shell orchestrator), workspace có thêm **`engine/` P
 
 | Thành phần | Vai trò |
 |------------|---------|
-| `H_docs/harness.sh` | Shell orchestrator cho Dual-Model mode, quản lý iteration lifecycle, gọi `agy` CLI |
+| `pipeline/docs/harness.sh` | Shell orchestrator cho Dual-Model mode, quản lý iteration lifecycle, gọi `agy` CLI |
 | `engine/` Python package | Thư viện Event Logging, Security Gate, Cost Tracking — dùng trong Agent code |
-| `H_docs/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
+| `pipeline/docs/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
 
 ### Session Log Location
 
 Session JSONL files (append-only, ground truth):
 ```
-H_docs/runtime/session_<TASK_ID>.jsonl  ← KHÔNG git-track (xem .gitignore)
+pipeline/docs/runtime/session_<TASK_ID>.jsonl  ← KHÔNG git-track (xem .gitignore)
 ```
 
 ### CLI Entry Point (Skeleton)
@@ -259,6 +259,6 @@ python3 bin/agent-run --task TASK-001 --resume
 
 ### Quy tắc BẮTBUỘC khi dùng Engine
 
-1. **Trước mọi commit**: `python3 H_docs/scripts/verify.py` phải `Status: PASS`
+1. **Trước mọi commit**: `python3 pipeline/docs/scripts/verify.py` phải `Status: PASS`
 2. **Event log** phải được append đúng loại: `TOOL_CALL` → `TOOL_RESULT` → không bỏ bước
 3. **Vault Proxy**: Không bao giờ truyền raw API key vào `EventLog.append()` payload

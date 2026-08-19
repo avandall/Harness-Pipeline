@@ -86,7 +86,7 @@ Tech Stack:        [Ví dụ: Python / FastAPI, PostgreSQL, Docker, React, TypeS
 - [ ] [Tiêu chí hoàn thành 2]
 - [ ] [Tiêu chí hoàn thành 3]
 - [ ] Automated unit & integration tests pass 100%.
-- [ ] Code tuân thủ tiêu chuẩn trong H_docs/core/CODE_STANDARDS.md.
+- [ ] Code tuân thủ tiêu chuẩn trong pipeline/docs/core/CODE_STANDARDS.md.
 
 ---
 
