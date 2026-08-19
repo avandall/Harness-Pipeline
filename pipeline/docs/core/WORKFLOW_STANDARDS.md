@@ -104,11 +104,11 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 **Quy trình BẮT BUỘC:**
 1. **Chạy Script kiểm tra định tính:**
    ```bash
-   python3 H_docs/scripts/verify.py
+   python3 pipeline/docs/scripts/verify.py
    ```
-   Script này sẽ tự động chạy: Linter (Ruff), Type Checker (Mypy), Security Scan (Bandit), và Unit Tests (Pytest).
+   Script này sẽ tự động chạy Linter, Type Checker, Security Scan, và Unit Tests theo active preset (Python, Node/React, Go, Shell, Polyglot).
 
-2. **Kiểm tra báo cáo `H_docs/runtime/VERIFICATION_REPORT.md`:**
+2. **Kiểm tra báo cáo `pipeline/docs/runtime/VERIFICATION_REPORT.md`:**
    - Nếu `Status: FAIL`: Đọc các dòng log Traceback được cắt tỉa gọn gàng trong file `VERIFICATION_REPORT.md`. Sửa ngay các lỗi này và chạy lại `verify.py`. **KHÔNG ĐƯỢC CHUYỂN SANG PHASE 5 KHI VẪN CÒN CƠ LỖI TIER 1!**
    - Nếu `Status: PASS`: Chuyển sang Phase 5.
 
