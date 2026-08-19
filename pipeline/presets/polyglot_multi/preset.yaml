@@ -1,0 +1,12 @@
+name: "polyglot_multi"
+description: "Multi-language preset (Auto-detects & combines Python, Node.js, Go, Shell checks)"
+version: "1.0.0"
+
+active_languages:
+  - "python"
+  - "node"
+  - "go"
+  - "shell"
+
+compactor:
+  max_traceback_lines: 30

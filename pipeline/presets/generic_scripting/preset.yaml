@@ -1,0 +1,18 @@
+name: "generic_scripting"
+description: "Preset adapter for Shell Scripting projects (ShellCheck + Shfmt)"
+version: "1.0.0"
+
+static_checkers:
+  linter: "shellcheck *.sh pipeline/**/*.sh"
+  type_checker: "bash -n *.sh"
+  security_scanner: "shellcheck -S warning *.sh"
+
+test_runner:
+  unit_tests: "bash -n *.sh"
+
+compactor:
+  max_traceback_lines: 20
+  keep_patterns:
+    - "SC"
+    - "syntax error"
+    - "unexpected token"

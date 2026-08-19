@@ -1,0 +1,19 @@
+name: "go_backend"
+description: "Preset adapter for Go projects (golangci-lint + go test + go vet)"
+version: "1.0.0"
+
+static_checkers:
+  linter: "golangci-lint run ./..."
+  type_checker: "go vet ./..."
+  security_scanner: "govulncheck ./..."
+
+test_runner:
+  unit_tests: "go test -v ./..."
+
+compactor:
+  max_traceback_lines: 20
+  keep_patterns:
+    - "FAIL:"
+    - "panic:"
+    - "undefined:"
+    - "cannot use"

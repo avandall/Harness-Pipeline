@@ -50,7 +50,49 @@ EOF
   chmod +x "${ROOT_AGENT_RUN}"
 fi
 
-# 5. Create .gitignore entries if needed
+# 5. Create base pyproject.toml if not existing in target project root
+PYPROJECT="${TARGET_DIR}/pyproject.toml"
+if [[ ! -f "${PYPROJECT}" ]]; then
+  echo "📝 Initializing base pyproject.toml for pipeline dependencies..."
+  cat << 'EOF' > "${PYPROJECT}"
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-agent-pipeline-project"
+version = "0.1.0"
+description = "Project configured with Enterprise Agent Pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0.0",
+    "httpx>=0.24.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
+    "bandit>=1.7.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["pipeline/tests", "tests"]
+python_files = "test_*.py"
+EOF
+fi
+
+# 6. Create .gitignore entries if needed
 GITIGNORE="${TARGET_DIR}/.gitignore"
 if [[ -f "${GITIGNORE}" ]]; then
   if ! grep -q "session_\*\.jsonl" "${GITIGNORE}"; then
@@ -65,5 +107,12 @@ echo "✅ Pipeline successfully installed!"
 echo ""
 echo "📋 Next steps:"
 echo "  1. Edit pipeline/docs/context/PROJECT_BRIEF.md with your project goal."
-echo "  2. Edit pipeline/docs/context/Tasks_list.md with your task queue."
-echo "  3. Run: ./harness.sh"
+echo "  2. Preset Language Selector (default: python_backend):"
+echo "     • Python:     active_preset: \"python_backend\""
+echo "     • Node/React: active_preset: \"node_react\""
+echo "     • Go:         active_preset: \"go_backend\""
+echo "     • Polyglot:   active_preset: \"polyglot_multi\" (Auto-detects Python+Node+Go)"
+echo "     (Change in pipeline/presets/active_preset.yaml)"
+echo "  3. Edit pipeline/docs/context/Tasks_list.md with your task queue."
+echo "  4. Run: ./harness.sh"
+

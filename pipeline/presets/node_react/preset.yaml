@@ -1,0 +1,19 @@
+name: "node_react"
+description: "Preset adapter for Node.js / TypeScript / React projects (ESLint + TSC + Vitest/Jest)"
+version: "1.0.0"
+
+static_checkers:
+  linter: "npx eslint src/ --max-warnings 0"
+  type_checker: "npx tsc --noEmit"
+  security_scanner: "npm audit --audit-level=high"
+
+test_runner:
+  unit_tests: "npx vitest run --silent || npx jest --silent"
+
+compactor:
+  max_traceback_lines: 25
+  keep_patterns:
+    - "FAIL"
+    - "Error:"
+    - "TypeError"
+    - "SyntaxError"

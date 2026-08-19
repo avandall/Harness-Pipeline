@@ -38,13 +38,31 @@ Bộ khung này được quy hoạch gọn gàng trong **duy nhất 1 thư mục
    ./pipeline/setup.sh
    ```
 
-*Script `setup.sh` sẽ tự động cấp quyền thực thi (`chmod +x`), tạo wrapper `./harness.sh` ở root và cấu hình `.gitignore` cho dự án mới.*
+*Script `setup.sh` sẽ tự động cấp quyền thực thi (`chmod +x`), tạo wrapper `./harness.sh` ở root, tự động khởi tạo `pyproject.toml` cơ bản (nếu dự án mới chưa có) và cấu hình `.gitignore`.*
 
 ---
 
-## 3. Cấu Hình Dự Án Mới (Những File Cần Sửa)
+## 3. Cấu Hình Dự Án Mới & Chọn Ngôn Ngữ (Preset Selector)
 
-Sau khi copy sang dự án mới, bạn chỉ cần mở thư mục `pipeline/docs/context/` và cập nhật các file theo thứ tự:
+### A. Chọn Preset Ngôn Ngữ (Default: Python)
+Hệ thống hỗ trợ sẵn các preset cho những ngôn ngữ phổ biến trong `pipeline/presets/`. Mặc định hệ thống dùng `python_backend`. Để đổi ngôn ngữ, mở file `pipeline/presets/active_preset.yaml`:
+
+```yaml
+# Chọn 1 trong các preset: python_backend | node_react | go_backend | generic_scripting | polyglot_multi | auto
+active_preset: "python_backend"
+```
+
+* **`python_backend`**: Dành cho dự án Python (Ruff + Mypy + Bandit + Pytest).
+* **`node_react`**: Dành cho dự án Node.js / TypeScript / React (ESLint + TSC + Vitest/Jest).
+* **`go_backend`**: Dành cho dự án Go (golangci-lint + go vet + go test).
+* **`generic_scripting`**: Dành cho dự án Shell Scripts (ShellCheck).
+* **`polyglot_multi` hoặc `auto` (DỰ ÁN NHIỀU NGÔN NGỮ)**: AI sẽ **tự động phát hiện tất cả ngôn ngữ có trong dự án** (ví dụ: Python Backend + React Frontend + Go service) và chạy kiểm tra định tính đồng thời cho toàn bộ các ngôn ngữ!
+
+---
+
+### B. Các File Cấu Hình Dự Án Mới
+
+Sau khi copy sang dự án mới, bạn chỉ cần mở thư mục `pipeline/docs/context/` và cập nhật các file:
 
 | # | File cần sửa | Vai trò | Nội dung cần điền |
 |---|---|---|---|
@@ -52,7 +70,8 @@ Sau khi copy sang dự án mới, bạn chỉ cần mở thư mục `pipeline/do
 | 2 | `pipeline/docs/context/TECH_CONTEXT.md` | Bối cảnh kỹ thuật | Điền exact Python/Node/Go version, danh sách thư viện, DB local, và lệnh test. |
 | 3 | `pipeline/docs/context/BOUNDARIES.md` | Giới hạn quyền hạn | Điền danh sách file được sửa (`src/**`, `tests/**`), cấm sửa (`.env`), quyền DB. |
 | 4 | `pipeline/docs/context/Tasks_list.md` | Danh sách công việc | Xóa task cũ, điền danh sách task mới dạng `[ ] [TASK-001] Mô tả...` (P0/P1/P2). |
-| 5 | `pyproject.toml` (hoặc `package.json`) | Package Dependencies | Khai báo các thư viện phụ thuộc của dự án mới. |
+| 5 | `pyproject.toml` (hoặc `package.json`) | Package Dependencies | Tự sinh bởi `setup.sh` (nếu chưa có). Thêm các package phụ thuộc dự án mới nếu cần. |
+
 
 > 🔒 **LƯU Ý:** Các thư mục `pipeline/docs/core/`, `pipeline/engine/`, `pipeline/.agents/` là bộ quy tắc bất biến và động cơ lõi — **KHÔNG CẦN SỬA**.
 

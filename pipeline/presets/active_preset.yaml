@@ -1,0 +1,3 @@
+# Active Preset Configuration
+# Options: python_backend | node_react | go_backend | generic_scripting | polyglot_multi | auto
+active_preset: "python_backend"
