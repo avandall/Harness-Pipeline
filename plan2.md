@@ -309,14 +309,18 @@ Các file này chứa **Quy luật bất biến và Động cơ cốt lõi (Core
 
 ### 8.4 Lệnh Kiểm Tra & Khởi Chạy Nhanh Cho Dự Án Mới
 
-Sau khi cấu hình xong các file ở mục 8.2, chạy 2 lệnh sau để sẵn sàng phát triển:
+Sau khi cấu hình xong các file ở mục 8.2, bạn chỉ cần gõ duy nhất 2 lệnh sau:
 
 ```bash
 # 1. Chạy Tier 1 Verification kiểm tra môi trường ban đầu
 python3 H_docs/scripts/verify.py
 
-# 2. Khởi tạo pipeline loop cho Task 1
-python3 bin/agent-run --task TASK-001
+# 2. Khởi tạo pipeline loop (Tự động đọc Tasks_list.md và lấy task [ ] TODO đầu tiên)
+python3 bin/agent-run
+
+# (Tùy chọn) Nếu muốn chỉ định chính xác 1 task cụ thể:
+python3 bin/agent-run --task TASK-002
 ```
+
 
 

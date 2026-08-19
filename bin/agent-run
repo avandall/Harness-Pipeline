@@ -14,16 +14,38 @@ from engine.harness.loop import RalphLoopRunner
 from engine.harness.state_machine import PipelineState
 
 
+import re
+
+def get_next_todo_task(workspace_dir: Path) -> str:
+    """Scan H_docs/context/Tasks_list.md and return the first task marked [ ] TODO or [/] IN_PROGRESS."""
+    tasks_file = workspace_dir / "H_docs" / "context" / "Tasks_list.md"
+    if not tasks_file.exists():
+        return "TASK-001"
+
+    content = tasks_file.read_text(encoding="utf-8")
+    for line in content.splitlines():
+        if "[ ] TODO" in line or "[/] IN_PROGRESS" in line:
+            match = re.search(r"TASK-\d+", line)
+            if match:
+                return match.group(0)
+    return "TASK-001"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Enterprise Agent Pipeline Execution Runner")
-    parser.add_argument("--task", type=str, default="TASK-001", help="Task ID to execute")
+    parser.add_argument("--task", type=str, default="AUTO", help="Task ID to execute (default: AUTO picks first TODO task from Tasks_list.md)")
     parser.add_argument("--resume", action="store_true", help="Resume from last durable session log")
     parser.add_argument("--action", type=str, default="ORIENT", help="Initial action step")
 
     args = parser.parse_args()
 
-    print(f"🚀 Initializing Enterprise Agent Pipeline for [{args.task}]...")
-    runner = RalphLoopRunner(task_id=args.task, workspace_dir=PROJECT_ROOT)
+    task_id = args.task
+    if task_id.upper() == "AUTO":
+        task_id = get_next_todo_task(PROJECT_ROOT)
+        print(f"📋 Auto-detected next active task: [{task_id}] from Tasks_list.md")
+
+    print(f"🚀 Initializing Enterprise Agent Pipeline for [{task_id}]...")
+    runner = RalphLoopRunner(task_id=task_id, workspace_dir=PROJECT_ROOT)
 
     if args.resume:
         last_event = runner.event_log.get_last_event()
@@ -33,7 +55,7 @@ def main():
             print("⚠️ No previous session log found to resume. Starting fresh session.")
 
     runner.state_machine.transition_to(PipelineState.PLANNING)
-    res = runner.run_iteration(action_type=args.action, command=f"Initialized task {args.task}")
+    res = runner.run_iteration(action_type=args.action, command=f"Initialized task {task_id}")
 
     print(f"✅ Pipeline step executed successfully (State: {runner.state_machine.current_state.value}).")
     print(f"📊 Events logged to: {runner.log_file}")
@@ -41,3 +63,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
