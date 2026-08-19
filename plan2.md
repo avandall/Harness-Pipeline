@@ -307,20 +307,25 @@ Các file này chứa **Quy luật bất biến và Động cơ cốt lõi (Core
 
 ---
 
-### 8.4 Lệnh Kiểm Tra & Khởi Chạy Nhanh Cho Dự Án Mới
+### 8.4 Lệnh Khởi Chạy Pipeline Dự Án Mới
 
-Sau khi cấu hình xong các file ở mục 8.2, bạn chỉ cần gõ duy nhất 2 lệnh sau:
+Sau khi cấu hình xong các file ở mục 8.2, bạn sử dụng lệnh sau để bắt đầu:
 
 ```bash
 # 1. Chạy Tier 1 Verification kiểm tra môi trường ban đầu
 python3 H_docs/scripts/verify.py
 
-# 2. Khởi tạo pipeline loop (Tự động đọc Tasks_list.md và lấy task [ ] TODO đầu tiên)
-python3 bin/agent-run
+# 2. KHUYẾN NGHỊ: Khởi chạy Vòng lặp Tự động (Ralph Loop Orchestrator)
+# (Tự động đọc Tasks_list.md, pick task TODO, sinh CURRENT_TASK.md, verify & commit cho đến khi xong hết backlog)
+./H_docs/harness.sh
 
-# (Tùy chọn) Nếu muốn chỉ định chính xác 1 task cụ thể:
-python3 bin/agent-run --task TASK-002
+# (Tùy chọn) Khởi chạy với chế độ Dual-Model Review (1 model code, 1 model review phản biện):
+./H_docs/harness.sh --review-model gemini-3.6-flash-low
+
+# (Tùy chọn) Chạy trực tiếp qua Python Core Engine CLI (dùng khi test step lẻ hoặc debug engine):
+python3 bin/agent-run
 ```
+
 
 
 
