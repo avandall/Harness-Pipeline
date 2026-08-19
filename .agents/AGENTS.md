@@ -8,15 +8,15 @@
 
 ## Bắt buộc đọc trước khi làm bất cứ điều gì
 
-Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc các files sau theo thứ tự:
+Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc các files sau theo thứ tự (trong `pipeline/docs/` hoặc `H_docs/`):
 
-1. `H_docs/core/AGENT_CONSTITUTION.md` — 10 điều luật bất biến
-2. `H_docs/core/HARNESS_PROTOCOL.md` — Ralph Loop và state machine
-3. `H_docs/core/WORKFLOW_STANDARDS.md` — Pipeline 7 phases
-4. `H_docs/context/PROJECT_BRIEF.md` — Mô tả dự án
-5. `H_docs/runtime/CURRENT_TASK.md` — Task đang làm
-6. `H_docs/context/BOUNDARIES.md` — Giới hạn quyền hạn
-7. `H_docs/runtime/STATUS.md` — Trạng thái hiện tại (nếu tồn tại)
+1. `pipeline/docs/core/AGENT_CONSTITUTION.md` — 10 điều luật bất biến
+2. `pipeline/docs/core/HARNESS_PROTOCOL.md` — Ralph Loop và state machine
+3. `pipeline/docs/core/WORKFLOW_STANDARDS.md` — Pipeline 7 phases
+4. `pipeline/docs/context/PROJECT_BRIEF.md` — Mô tả dự án
+5. `pipeline/docs/runtime/CURRENT_TASK.md` — Task đang làm
+6. `pipeline/docs/context/BOUNDARIES.md` — Giới hạn quyền hạn
+7. `pipeline/docs/runtime/STATUS.md` — Trạng thái hiện tại (nếu tồn tại)
 
 ---
 

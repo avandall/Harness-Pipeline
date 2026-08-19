@@ -3,12 +3,21 @@
 from pathlib import Path
 import tempfile
 
-from engine.session.compactor import truncate_log
-from engine.session.event_log import EventLog, EventType
-from engine.security.hitl_gate import HumanInTheLoopGate
-from engine.security.vault_proxy import SecretVaultProxy
-from engine.observability.cost_tracker import CostTracker
-from engine.harness.loop import RalphLoopRunner
+
+try:
+    from pipeline.engine.session.compactor import truncate_log
+    from pipeline.engine.session.event_log import EventLog, EventType
+    from pipeline.engine.security.hitl_gate import HumanInTheLoopGate
+    from pipeline.engine.security.vault_proxy import SecretVaultProxy
+    from pipeline.engine.observability.cost_tracker import CostTracker
+    from pipeline.engine.harness.loop import RalphLoopRunner
+except ImportError:
+    from engine.session.compactor import truncate_log
+    from engine.session.event_log import EventLog, EventType
+    from engine.security.hitl_gate import HumanInTheLoopGate
+    from engine.security.vault_proxy import SecretVaultProxy
+    from engine.observability.cost_tracker import CostTracker
+    from engine.harness.loop import RalphLoopRunner
 
 
 def test_log_compactor():

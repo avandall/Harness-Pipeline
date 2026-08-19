@@ -179,7 +179,10 @@ def main():
         sys.exit(0 if all_passed else 1)
 
     # ── Full mode: write VERIFICATION_REPORT.md ──────────────────────────────
-    report_path = Path("H_docs/runtime/VERIFICATION_REPORT.md")
+    docs_runtime = Path("pipeline/docs/runtime")
+    if not docs_runtime.parent.exists():
+        docs_runtime = Path("H_docs/runtime")
+    report_path = docs_runtime / "VERIFICATION_REPORT.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     print("🔍 Running Tier 1 Deterministic Verification Checks...")

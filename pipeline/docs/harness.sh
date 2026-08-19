@@ -13,10 +13,14 @@
 
 set -euo pipefail
 
-# ────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ────────────────────────────────────────────────────────────────────────────
-DOCS_DIR="./H_docs"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "${SCRIPT_DIR}/core" ]]; then
+  DOCS_DIR="${SCRIPT_DIR}"
+elif [[ -d "./pipeline/docs" ]]; then
+  DOCS_DIR="./pipeline/docs"
+else
+  DOCS_DIR="./H_docs"
+fi
 RUNTIME_DIR="${DOCS_DIR}/runtime"
 CONTEXT_DIR="${DOCS_DIR}/context"
 CORE_DIR="${DOCS_DIR}/core"

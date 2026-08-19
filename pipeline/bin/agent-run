@@ -6,19 +6,29 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# Add project root and pipeline dir to sys.path
+SCRIPT_DIR = Path(__file__).resolve().parent
+PIPELINE_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = PIPELINE_DIR.parent
 
-from engine.harness.loop import RalphLoopRunner
-from engine.harness.state_machine import PipelineState
+for p in [str(PROJECT_ROOT), str(PIPELINE_DIR)]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
+try:
+    from pipeline.engine.harness.loop import RalphLoopRunner
+    from pipeline.engine.harness.state_machine import PipelineState
+except ImportError:
+    from engine.harness.loop import RalphLoopRunner
+    from engine.harness.state_machine import PipelineState
 
 import re
 
 def get_next_todo_task(workspace_dir: Path) -> str:
-    """Scan H_docs/context/Tasks_list.md and return the first task marked [ ] TODO or [/] IN_PROGRESS."""
-    tasks_file = workspace_dir / "H_docs" / "context" / "Tasks_list.md"
+    """Scan pipeline/docs/context/Tasks_list.md and return the first task marked [ ] TODO or [/] IN_PROGRESS."""
+    tasks_file = workspace_dir / "pipeline" / "docs" / "context" / "Tasks_list.md"
+    if not tasks_file.exists():
+        tasks_file = workspace_dir / "H_docs" / "context" / "Tasks_list.md"
     if not tasks_file.exists():
         return "TASK-001"
 

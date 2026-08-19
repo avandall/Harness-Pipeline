@@ -23,7 +23,10 @@ class RalphLoopRunner:
     ):
         self.task_id: str = task_id
         self.workspace_dir: Path = Path(workspace_dir)
-        self.log_file: Path = log_file or (self.workspace_dir / "H_docs" / "runtime" / f"session_{task_id}.jsonl")
+        docs_runtime = self.workspace_dir / "pipeline" / "docs" / "runtime"
+        if not docs_runtime.exists():
+            docs_runtime = self.workspace_dir / "H_docs" / "runtime"
+        self.log_file: Path = log_file or (docs_runtime / f"session_{task_id}.jsonl")
         self.event_log: EventLog = EventLog(self.log_file)
         self.state_machine: StateMachine = StateMachine()
         self.vault: SecretVaultProxy = SecretVaultProxy()
