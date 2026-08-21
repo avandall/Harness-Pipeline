@@ -39,7 +39,7 @@ Do not compound multiple unrelated changes in one iteration.
 ## Điều 4 — Proof Over Promise (Bằng chứng hơn lời hứa)
 
 Never claim something "works" or "is done" without objective evidence. Before marking any task complete:
-- Run `python3 pipeline/docs/scripts/verify.py` and ensure Tier 1 checks pass 100%.
+- Run `python3 pipeline/scripts/verify.py` and ensure Tier 1 checks pass 100%.
 - Inspect `pipeline/docs/runtime/VERIFICATION_REPORT.md` for zero errors.
 - Document results in `pipeline/docs/runtime/PROOF_OF_SOLUTION.md`.
 - If verification cannot be run, explicitly state why and what manual steps are needed.

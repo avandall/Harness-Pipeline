@@ -30,6 +30,8 @@ pipeline/
 # Root Wrappers (tự sinh bởi setup.sh ở root dự án):
 ├── harness.sh                      # -> trỏ tới ./pipeline/scripts/harness.sh
 └── bin/agent-run                   # -> trỏ tới python3 ./pipeline/scripts/agent-run
+
+
 ```
 
 ---
@@ -64,7 +66,7 @@ Nằm hoàn toàn bên trong `pipeline/docs/context/`:
 | 4 | `pipeline/docs/context/Tasks_list.md` | Master Task Backlog | Thêm danh sách task cần làm dạng `[ ] [TASK-001] Mô tả task` (chia theo P0/P1/P2). |
 | 5 | `pyproject.toml` (hoặc `package.json`) | Package Dependencies | Thêm các thư viện phụ thuộc của dự án mới. |
 | 6 | `pipeline/presets/<domain>/preset.yaml` | Adapter kiểm tra tĩnh & Test | Chọn hoặc tạo preset tương ứng (`python_backend` hoặc `node_react`). |
-| 7 | `pipeline/docs/scripts/verify.py` | Engine kiểm định Tier 1 | Nếu dự án không dùng Python (dùng TS/Go), cập nhật lệnh CLI sang lint/test runner tương ứng. |
+| 7 | `pipeline/scripts/verify.py` | Engine kiểm định Tier 1 | Nếu dự án không dùng Python (dùng TS/Go), cập nhật lệnh CLI sang lint/test runner tương ứng. |
 
 ---
 

@@ -3,4 +3,4 @@
 from engine.observability.cost_tracker import CostTracker
 from engine.observability.tracer import PipelineTracer
 
-__all__ = ["PipelineTracer", "CostTracker"]
+__all__ = ["CostTracker", "PipelineTracer"]

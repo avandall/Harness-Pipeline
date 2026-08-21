@@ -3,13 +3,16 @@
 Intercepts high-risk or irreversible tool calls for human approval.
 """
 
-from typing import List, Optional, Tuple
+
+
+from typing import ClassVar
 
 
 class HumanInTheLoopGate:
     """Interceptors for hazardous operations."""
 
-    DEFAULT_HIGH_RISK_PATTERNS: List[str] = [
+    DEFAULT_HIGH_RISK_PATTERNS: ClassVar[list[str]] = [
+
         "git push",
         "rm -rf",
         "DROP TABLE",
@@ -18,10 +21,10 @@ class HumanInTheLoopGate:
         "systemctl restart",
     ]
 
-    def __init__(self, high_risk_patterns: Optional[List[str]] = None):
-        self.patterns: List[str] = high_risk_patterns or self.DEFAULT_HIGH_RISK_PATTERNS
+    def __init__(self, high_risk_patterns: list[str] | None = None):
+        self.patterns: list[str] = high_risk_patterns or self.DEFAULT_HIGH_RISK_PATTERNS
 
-    def inspect_action(self, tool_name: str, command: str) -> Tuple[bool, str]:
+    def inspect_action(self, tool_name: str, command: str) -> tuple[bool, str]:
         """Check if an action is high-risk and requires human signoff.
 
         Returns:

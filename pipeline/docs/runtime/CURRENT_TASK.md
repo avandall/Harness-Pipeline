@@ -59,7 +59,7 @@ Task được coi là DONE khi:
 ```bash
 # Lệnh để verify task hoàn thành
 [ví dụ: pytest tests/test_feature.py -v]
-[ví dụ: python3 pipeline/docs/scripts/verify.py]
+[ví dụ: python3 pipeline/scripts/verify.py]
 ```
 
 ---

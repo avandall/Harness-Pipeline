@@ -14,7 +14,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 if [[ -d "${SCRIPT_DIR}/../docs/core" ]]; then
+
   DOCS_DIR="$(cd "${SCRIPT_DIR}/../docs" && pwd)"
 elif [[ -d "./pipeline/docs/core" ]]; then
   DOCS_DIR="./pipeline/docs"
@@ -213,11 +215,12 @@ preflight_check() {
   fi
 
   # Check verify.py script exists
-  if [[ -f "${DOCS_DIR}/scripts/verify.py" ]]; then
-    log_ok "Verification script exists: ${DOCS_DIR}/scripts/verify.py"
+  if [[ -f "${PIPELINE_DIR}/scripts/verify.py" ]]; then
+    log_ok "Verification script exists: ${PIPELINE_DIR}/scripts/verify.py"
   else
-    log_warn "Missing ${DOCS_DIR}/scripts/verify.py — verification script recommended"
+    log_warn "Missing ${PIPELINE_DIR}/scripts/verify.py — verification script recommended"
   fi
+
 
   # Check python3 is available
   if command -v python3 >/dev/null 2>&1; then

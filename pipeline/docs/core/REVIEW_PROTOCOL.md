@@ -10,7 +10,7 @@
 ## 0. Quy trình Phản biện 2 Lớp (Two-Tier Review)
 
 ```
-[Mã nguồn mới] ──► [Tier 1: python pipeline/docs/scripts/verify.py] ──► [PASS 100%] ──► [Tier 2: Cognitive LLM Review (git diff)] ──► [APPROVED]
+[Mã nguồn mới] ──► [Tier 1: python3 pipeline/scripts/verify.py] ──► [PASS 100%] ──► [Tier 2: Cognitive LLM Review (git diff)] ──► [APPROVED]
 ```
 
 - **Tier 1 (Automated Mechanical Checks):** Do CLI Tools đảm nhận (`ruff`, `mypy`, `bandit`, `pytest`). Bắt 100% lỗi cú pháp, kiểu dữ liệu, lỗ hổng bảo mật cơ bản và runtime crash.
@@ -96,7 +96,7 @@ Reviewer (--review-model) → đọc git diff + VERIFICATION_REPORT.md → DEBAT
 ### Input của Reviewer Model
 Reviewer **chỉ được cung cấp** (token-efficient):
 1. `git diff HEAD~1 HEAD` — các thay đổi cụ thể
-2. Summary 1 dòng từ `python3 pipeline/docs/scripts/verify.py --summary`
+2. Summary 1 dòng từ `python3 pipeline/scripts/verify.py --summary`
 3. `pipeline/docs/runtime/VERIFICATION_REPORT.md` — nếu cần xem chi tiết lỗi Tier 1
 4. Checklist từ `pipeline/docs/core/REVIEW_PROTOCOL.md` Section 1
 

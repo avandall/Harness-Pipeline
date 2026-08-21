@@ -142,5 +142,5 @@ Khi AI gặp vấn đề vượt quá quyền hạn hoặc không thể tự kh�
 | **Cài pipeline vào dự án mới** | `./pipeline/setup.sh /path/to/du-an-moi` |
 | **Bắt đầu chạy tự động toàn bộ task** | `./harness.sh` |
 | **Chạy tự động + Phản biện 2 model** | `./harness.sh --review-model gemini-3.6-flash-low` |
-| **Kiểm tra chất lượng code Tier 1** | `python3 pipeline/docs/scripts/verify.py` |
+| **Kiểm tra chất lượng code Tier 1** | `python3 pipeline/scripts/verify.py` |
 | **Chạy unit tests của Core Engine** | `python3 -m pytest pipeline/tests/test_engine.py` |

@@ -3,7 +3,8 @@
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -22,7 +23,7 @@ class Event(BaseModel):
     )
     event_type: EventType
     step: int
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
 
 
 class EventLog:
@@ -34,16 +35,16 @@ class EventLog:
         if not self.log_path.exists():
             self.log_path.touch()
 
-    def append(self, event_type: EventType, step: int, payload: Dict[str, Any]) -> Event:
+    def append(self, event_type: EventType, step: int, payload: dict[str, Any]) -> Event:
         """Append a new event to the JSONL log file."""
         event = Event(event_type=event_type, step=step, payload=payload)
         with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(event.model_dump_json() + "\n")
         return event
 
-    def get_all_events(self) -> List[Event]:
+    def get_all_events(self) -> list[Event]:
         """Read all events from the event log file."""
-        events: List[Event] = []
+        events: list[Event] = []
         if not self.log_path.exists():
             return events
 
@@ -54,7 +55,7 @@ class EventLog:
                     events.append(Event.model_validate_json(line))
         return events
 
-    def get_last_event(self) -> Optional[Event]:
+    def get_last_event(self) -> Event | None:
         """Return the most recent event logged, if any."""
         events = self.get_all_events()
         return events[-1] if events else None

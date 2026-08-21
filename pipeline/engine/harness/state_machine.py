@@ -1,7 +1,7 @@
 """State Machine for Agent Ralph Loop (Layer 2 - Harness)."""
 
 from enum import Enum
-from typing import List
+from typing import ClassVar
 
 
 class PipelineState(str, Enum):
@@ -17,7 +17,8 @@ class PipelineState(str, Enum):
 class StateMachine:
     """State transition controller for autonomous tasks."""
 
-    VALID_TRANSITIONS = {
+    VALID_TRANSITIONS: ClassVar[dict[PipelineState, list[PipelineState]]] = {
+
         PipelineState.ORIENT: [PipelineState.PLANNING, PipelineState.BLOCKED],
         PipelineState.PLANNING: [PipelineState.EXECUTING, PipelineState.BLOCKED],
         PipelineState.EXECUTING: [PipelineState.REVIEWING, PipelineState.BLOCKED],
@@ -29,7 +30,7 @@ class StateMachine:
 
     def __init__(self, initial_state: PipelineState = PipelineState.ORIENT):
         self._state: PipelineState = initial_state
-        self._history: List[PipelineState] = [initial_state]
+        self._history: list[PipelineState] = [initial_state]
 
     @property
     def current_state(self) -> PipelineState:

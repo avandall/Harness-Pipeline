@@ -3,7 +3,6 @@ from fastapi import APIRouter
 from app.api.deps import CurrentUser
 from app.schemas.user import UserRead
 
-
 router = APIRouter()
 
 

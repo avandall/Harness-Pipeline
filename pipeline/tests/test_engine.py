@@ -1,23 +1,22 @@
 """Unit tests for Core Engine components."""
 
-from pathlib import Path
 import tempfile
-
+from pathlib import Path
 
 try:
-    from pipeline.engine.session.compactor import truncate_log
-    from pipeline.engine.session.event_log import EventLog, EventType
+    from pipeline.engine.harness.loop import RalphLoopRunner
+    from pipeline.engine.observability.cost_tracker import CostTracker
     from pipeline.engine.security.hitl_gate import HumanInTheLoopGate
     from pipeline.engine.security.vault_proxy import SecretVaultProxy
-    from pipeline.engine.observability.cost_tracker import CostTracker
-    from pipeline.engine.harness.loop import RalphLoopRunner
+    from pipeline.engine.session.compactor import truncate_log
+    from pipeline.engine.session.event_log import EventLog, EventType
 except ImportError:
-    from engine.session.compactor import truncate_log
-    from engine.session.event_log import EventLog, EventType
-    from engine.security.hitl_gate import HumanInTheLoopGate
-    from engine.security.vault_proxy import SecretVaultProxy
-    from engine.observability.cost_tracker import CostTracker
-    from engine.harness.loop import RalphLoopRunner
+    from engine.harness.loop import RalphLoopRunner  # type: ignore[no-redef]
+    from engine.observability.cost_tracker import CostTracker  # type: ignore[no-redef]
+    from engine.security.hitl_gate import HumanInTheLoopGate  # type: ignore[no-redef]
+    from engine.security.vault_proxy import SecretVaultProxy  # type: ignore[no-redef]
+    from engine.session.compactor import truncate_log  # type: ignore[no-redef]
+    from engine.session.event_log import EventLog, EventType  # type: ignore[no-redef]
 
 
 def test_log_compactor():

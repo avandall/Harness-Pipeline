@@ -10,23 +10,50 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PIPELINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_DIR="$(cd "${PIPELINE_DIR}/.." && pwd)"
+
 TARGET_DIR="${1:-.}"
+mkdir -p "${TARGET_DIR}"
 TARGET_DIR="$(cd "${TARGET_DIR}" && pwd)"
+
+# Normalize TARGET_DIR if user passed a path ending in /pipeline
+if [[ "${TARGET_DIR}" == */pipeline ]]; then
+  TARGET_DIR="$(dirname "${TARGET_DIR}")"
+fi
 
 echo "🚀 Installing Enterprise Agent Pipeline into: [${TARGET_DIR}]..."
 
+
 # 1. Copy pipeline directory if target is different from source
-if [[ "${SCRIPT_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
+if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
   echo "📦 Copying pipeline infrastructure..."
   mkdir -p "${TARGET_DIR}/pipeline"
-  cp -r "${SCRIPT_DIR}"/* "${TARGET_DIR}/pipeline/"
+  cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
+fi
+
+# 1b. Copy .agents configuration directory if not existing in target
+AGENTS_SRC=""
+if [[ -d "${REPO_DIR}/.agents" ]]; then
+  AGENTS_SRC="${REPO_DIR}/.agents"
+elif [[ -d "${PIPELINE_DIR}/.agents" ]]; then
+  AGENTS_SRC="${PIPELINE_DIR}/.agents"
+fi
+
+if [[ -n "${AGENTS_SRC}" ]]; then
+  if [[ ! -d "${TARGET_DIR}/.agents" ]]; then
+    echo "📦 Copying .agents configuration..."
+    mkdir -p "${TARGET_DIR}/.agents"
+    cp -r "${AGENTS_SRC}"/. "${TARGET_DIR}/.agents/"
+  else
+    echo "⏩ .agents directory already exists in target, skipping..."
+  fi
 fi
 
 # 2. Make CLI scripts executable
-chmod +x "${TARGET_DIR}/pipeline/scripts/agent-run" 2>/dev/null || true
-chmod +x "${TARGET_DIR}/pipeline/scripts/harness.sh" 2>/dev/null || true
-chmod +x "${TARGET_DIR}/pipeline/scripts/verify.py" 2>/dev/null || true
-chmod +x "${TARGET_DIR}/pipeline/scripts/setup.sh" 2>/dev/null || true
+if [[ -d "${TARGET_DIR}/pipeline/scripts" ]]; then
+  chmod +x "${TARGET_DIR}/pipeline/scripts/"* 2>/dev/null || true
+fi
 
 # 3. Create root convenience wrapper harness.sh if not existing
 ROOT_HARNESS="${TARGET_DIR}/harness.sh"
@@ -49,6 +76,16 @@ EOF
   chmod +x "${PIPELINE_SETUP}"
 fi
 
+# Also ensure pipeline/setup.sh exists in source if we ran in source
+SOURCE_PIPELINE_SETUP="${PIPELINE_DIR}/setup.sh"
+if [[ ! -f "${SOURCE_PIPELINE_SETUP}" ]]; then
+  cat << 'EOF' > "${SOURCE_PIPELINE_SETUP}"
+#!/usr/bin/env bash
+exec "$(dirname "$0")/scripts/setup.sh" "$@"
+EOF
+  chmod +x "${SOURCE_PIPELINE_SETUP}"
+fi
+
 # 5. Create root convenience wrapper bin/agent-run if not existing
 mkdir -p "${TARGET_DIR}/bin"
 ROOT_AGENT_RUN="${TARGET_DIR}/bin/agent-run"
@@ -61,7 +98,9 @@ EOF
   chmod +x "${ROOT_AGENT_RUN}"
 fi
 
-# 5. Create base pyproject.toml if not existing in target project root
+
+
+# 6. Create base pyproject.toml if not existing in target project root
 PYPROJECT="${TARGET_DIR}/pyproject.toml"
 if [[ ! -f "${PYPROJECT}" ]]; then
   echo "📝 Initializing base pyproject.toml for pipeline dependencies..."
@@ -103,13 +142,12 @@ python_files = "test_*.py"
 EOF
 fi
 
-# 6. Create .gitignore entries if needed
+# 7. Create .gitignore entries if needed
 GITIGNORE="${TARGET_DIR}/.gitignore"
 if [[ -f "${GITIGNORE}" ]]; then
   if ! grep -q "session_\*\.jsonl" "${GITIGNORE}"; then
     echo "" >> "${GITIGNORE}"
     echo "# Agent Pipeline Logs" >> "${GITIGNORE}"
-    echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
     echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
   fi
 fi
@@ -126,4 +164,5 @@ echo "     • Polyglot:   active_preset: \"polyglot_multi\" (Auto-detects Pytho
 echo "     (Change in pipeline/presets/active_preset.yaml)"
 echo "  3. Edit pipeline/docs/context/Tasks_list.md with your task queue."
 echo "  4. Run: ./harness.sh"
+
 

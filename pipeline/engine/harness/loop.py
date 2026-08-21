@@ -5,7 +5,8 @@ and logs all actions to durable event session storage.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
+
 from engine.harness.state_machine import StateMachine
 from engine.security.hitl_gate import HumanInTheLoopGate
 from engine.security.vault_proxy import SecretVaultProxy
@@ -19,7 +20,7 @@ class RalphLoopRunner:
         self,
         task_id: str,
         workspace_dir: Path,
-        log_file: Optional[Path] = None,
+        log_file: Path | None = None,
     ):
         self.task_id: str = task_id
         self.workspace_dir: Path = Path(workspace_dir)
@@ -32,12 +33,12 @@ class RalphLoopRunner:
         self.gate: HumanInTheLoopGate = HumanInTheLoopGate()
         self.step_count: int = self.event_log.get_step_count()
 
-    def record_step(self, event_type: EventType, payload: Dict[str, Any]) -> None:
+    def record_step(self, event_type: EventType, payload: dict[str, Any]) -> None:
         """Increment step and append to event log."""
         self.step_count += 1
         self.event_log.append(event_type=event_type, step=self.step_count, payload=payload)
 
-    def run_iteration(self, action_type: str, command: str) -> Dict[str, Any]:
+    def run_iteration(self, action_type: str, command: str) -> dict[str, Any]:
         """Execute a single iteration step within the pipeline loop.
 
         Args:

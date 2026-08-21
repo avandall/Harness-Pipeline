@@ -132,7 +132,7 @@ Nếu gặp ≥ 2 lần liên tiếp:
 ```
 ┌─ EXECUTOR (default model) ──────────────────────────────────┐
 │  Prompt A: ORIENT → SPEC → PLAN → EXECUTE → VERIFY        │
-│  Chạy: python3 pipeline/docs/scripts/verify.py                   │
+│  Chạy: python3 pipeline/scripts/verify.py                   │
 │  ⚠️ DỪNG sau PHASE 4 — KHÔNG tự chạy Phase 5, 6, 7       │
 └─────────────────────────────────────────────────────────────┘
                 │ VERIFY PASS
@@ -235,7 +235,7 @@ Bên cạnh `harness.sh` (shell orchestrator), workspace có thêm **`engine/` P
 |------------|---------|
 | `pipeline/docs/harness.sh` | Shell orchestrator cho Dual-Model mode, quản lý iteration lifecycle, gọi `agy` CLI |
 | `engine/` Python package | Thư viện Event Logging, Security Gate, Cost Tracking — dùng trong Agent code |
-| `pipeline/docs/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
+| `pipeline/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
 
 ### Session Log Location
 
@@ -259,6 +259,6 @@ python3 bin/agent-run --task TASK-001 --resume
 
 ### Quy tắc BẮTBUỘC khi dùng Engine
 
-1. **Trước mọi commit**: `python3 pipeline/docs/scripts/verify.py` phải `Status: PASS`
+1. **Trước mọi commit**: `python3 pipeline/scripts/verify.py` phải `Status: PASS`
 2. **Event log** phải được append đúng loại: `TOOL_CALL` → `TOOL_RESULT` → không bỏ bước
 3. **Vault Proxy**: Không bao giờ truyền raw API key vào `EventLog.append()` payload

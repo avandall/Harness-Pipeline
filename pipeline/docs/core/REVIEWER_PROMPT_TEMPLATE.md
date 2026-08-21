@@ -15,7 +15,7 @@ harness.sh đọc file này → thay thế các placeholder → gửi cho review
 ```
 
 **Các placeholder được harness inject tự động:**
-- `{{TIER1_SUMMARY}}` — 1-line output từ `python3 pipeline/docs/scripts/verify.py --summary`
+- `{{TIER1_SUMMARY}}` — 1-line output từ `python3 pipeline/scripts/verify.py --summary`
 - `{{GIT_DIFF}}` — output của `git diff HEAD~1 HEAD` (capped ~400 dòng)
 - `{{ITERATION}}` — số iteration hiện tại
 - `{{DEBATE_LOG_PATH}}` — đường dẫn file DEBATE_LOG.md để ghi kết quả

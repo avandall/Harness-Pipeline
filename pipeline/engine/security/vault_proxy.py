@@ -4,20 +4,19 @@ Keeps raw credentials in host environment memory and injects them only into tool
 """
 
 import os
-from typing import Dict, Optional
 
 
 class SecretVaultProxy:
     """Manages secure key injection and sanitization."""
 
-    def __init__(self, secrets: Optional[Dict[str, str]] = None):
-        self._vault: Dict[str, str] = secrets or {}
+    def __init__(self, secrets: dict[str, str] | None = None):
+        self._vault: dict[str, str] = secrets or {}
 
     def set_secret(self, key: str, value: str) -> None:
         """Register a secret into the in-memory vault."""
         self._vault[key] = value
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         """Fetch a secret from vault or environment fallback."""
         return self._vault.get(key) or os.getenv(key)
 

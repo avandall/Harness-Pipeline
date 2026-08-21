@@ -1,6 +1,5 @@
 """Log compactor and token optimizer for extracting essential tracebacks and error messages."""
 
-from typing import List
 
 
 def truncate_log(log_text: str, max_lines: int = 20) -> str:
@@ -16,17 +15,17 @@ def truncate_log(log_text: str, max_lines: int = 20) -> str:
     if not log_text or not log_text.strip():
         return ""
 
-    lines: List[str] = log_text.strip().split("\n")
+    lines: list[str] = log_text.strip().split("\n")
     if len(lines) <= max_lines:
         return log_text.strip()
 
-    error_lines: List[str] = []
+    error_lines: list[str] = []
     in_traceback: bool = False
 
     for line in lines:
         if any(keyword in line for keyword in ["Traceback", "FAILED", "ERROR", "Error:", "CRITICAL"]):
             in_traceback = True
-        if in_traceback or line.startswith("E   ") or line.startswith("  File "):
+        if in_traceback or line.startswith(("E   ", "  File ")):
             error_lines.append(line)
 
     if error_lines:

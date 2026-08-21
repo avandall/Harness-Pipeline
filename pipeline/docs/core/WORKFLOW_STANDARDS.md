@@ -104,8 +104,9 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 **Quy trình BẮT BUỘC:**
 1. **Chạy Script kiểm tra định tính:**
    ```bash
-   python3 pipeline/docs/scripts/verify.py
+   python3 pipeline/scripts/verify.py
    ```
+
    Script này sẽ tự động chạy Linter, Type Checker, Security Scan, và Unit Tests theo active preset (Python, Node/React, Go, Shell, Polyglot).
 
 2. **Kiểm tra báo cáo `pipeline/docs/runtime/VERIFICATION_REPORT.md`:**

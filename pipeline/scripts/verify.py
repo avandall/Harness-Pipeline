@@ -5,10 +5,10 @@ Chạy các công cụ tĩnh (Static Analysis) và Runtime Test, hỗ trợ đa 
 (Python, Node.js/React, Go, Shell Scripting) & Polyglot Multi-Language Mode.
 
 Usage:
-  python3 pipeline/docs/scripts/verify.py                       # Defaults to active preset (Python)
-  python3 pipeline/docs/scripts/verify.py --preset node_react  # Run Node.js/React checks
-  python3 pipeline/docs/scripts/verify.py --preset auto        # Auto-detect all active languages
-  python3 pipeline/docs/scripts/verify.py --summary             # 1-line summary for AI review
+  python3 pipeline/scripts/verify.py                       # Defaults to active preset (Python)
+  python3 pipeline/scripts/verify.py --preset node_react  # Run Node.js/React checks
+  python3 pipeline/scripts/verify.py --preset auto        # Auto-detect all active languages
+  python3 pipeline/scripts/verify.py --summary             # 1-line summary for AI review
 """
 
 import argparse
@@ -18,7 +18,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 # Import shared compactor from engine (single source of truth for log truncation)
 try:
@@ -26,8 +25,9 @@ try:
     from pipeline.engine.session.compactor import truncate_log
 except ImportError:
     try:
-        from engine.session.compactor import truncate_log
+        from engine.session.compactor import truncate_log  # type: ignore[no-redef]
     except ImportError:
+
         def truncate_log(log_text: str, max_lines: int = 20) -> str:  # type: ignore[misc]
             if not log_text or not log_text.strip():
                 return ""
@@ -39,7 +39,7 @@ except ImportError:
             for line in lines:
                 if any(keyword in line for keyword in ["Traceback", "FAILED", "ERROR", "CRITICAL", "ERRORS"]):
                     in_traceback = True
-                if in_traceback or line.startswith("E   ") or "Error:" in line or line.startswith("FAILED "):
+                if in_traceback or line.startswith(("E   ", "FAILED ")) or "Error:" in line:
                     error_lines.append(line)
             if error_lines:
                 return "\n".join(error_lines[-max_lines:])
@@ -51,14 +51,14 @@ def check_tool_installed(tool_name: str) -> bool:
     return shutil.which(tool_name) is not None
 
 
-def run_command(cmd: List[str]) -> Tuple[int, str]:
+def run_command(cmd: list[str]) -> tuple[int, str]:
     """Chạy command an toàn và thu thập output."""
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         output = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
         return res.returncode, output.strip()
-    except Exception as e:
-        return 1, f"Execution failed: {str(e)}"
+    except Exception as e:  # noqa: BLE001
+        return 1, f"Execution failed: {e!s}"
 
 
 def get_active_preset(cli_preset: str) -> str:
@@ -77,7 +77,7 @@ def get_active_preset(cli_preset: str) -> str:
     return "python_backend"
 
 
-def run_python_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
+def run_python_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra chuẩn cho dự án Python: Ruff, Mypy, Bandit, Pytest."""
     results = []
 
@@ -121,7 +121,7 @@ def run_python_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
     return results
 
 
-def run_node_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
+def run_node_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra cho dự án Node.js / TypeScript / React."""
     results = []
     has_package_json = os.path.exists(os.path.join(target_dir, "package.json"))
@@ -141,7 +141,7 @@ def run_node_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
     return results if results else [("Node.js Check", True, "Node environment ready ✓")]
 
 
-def run_go_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
+def run_go_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra cho dự án Go."""
     results = []
     if not os.path.exists(os.path.join(target_dir, "go.mod")):
@@ -157,7 +157,7 @@ def run_go_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
     return results if results else [("Go Check", True, "Go checks passed ✓")]
 
 
-def run_shell_checks(target_dir: str = ".") -> List[Tuple[str, bool, str]]:
+def run_shell_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra cho Shell Scripting (ShellCheck)."""
     results = []
     sh_files = [str(p) for p in Path(target_dir).rglob("*.sh") if "node_modules" not in str(p)]
@@ -190,7 +190,7 @@ def main():
 
     preset = get_active_preset(args.preset)
 
-    check_results: List[Tuple[str, bool, str]] = []
+    check_results: list[tuple[str, bool, str]] = []
 
     if preset == "node_react":
         check_results.extend(run_node_checks("."))
@@ -209,7 +209,7 @@ def main():
         check_results.extend(run_python_checks("."))
 
     all_passed = all(r[1] for r in check_results)
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
 
     # ── Summary mode: 1-line output for reviewer model prompt injection ──────
     if args.summary:
