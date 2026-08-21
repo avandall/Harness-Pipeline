@@ -131,31 +131,29 @@ Nếu gặp ≥ 2 lần liên tiếp:
 
 ```
 ┌─ EXECUTOR (default model) ──────────────────────────────────┐
-│  Prompt A: ORIENT → SPEC → PLAN → EXECUTE → VERIFY        │
+│  Phase 0-4: ORIENT → SPEC → PLAN → EXECUTE → VERIFY → REPORT│
 │  Chạy: python3 pipeline/scripts/verify.py                   │
-│  ⚠️ DỪNG sau PHASE 4 — KHÔNG tự chạy Phase 5, 6, 7       │
+│  Cập nhật: STATUS.md, PROGRESS_LOG.md (dừng trước commit)    │
 └─────────────────────────────────────────────────────────────┘
                 │ VERIFY PASS
                 ▼
 ┌─ REVIEWER (--review-model) ─────────────────────────────────┐
-│  Prompt B: đọc từ REVIEWER_PROMPT_TEMPLATE.md             │
-│  Nhận: git diff (≤400 dòng) + verify.py --summary         │
-│  Ghi kết quả vào: pipeline/docs/runtime/DEBATE_LOG.md            │
-│  Output: "Review Result: APPROVED" / "Review Result: REJECTED: ..." │
-│  Đây là cuộc hội thoại agy MỚI HOÀN TOÀN (fresh context) │
+│  Phase 5: Cognitive Review dựa trên git diff HEAD           │
+│  Tự động AUTO-APPROVE nếu không có code changes (Diff rỗng)  │
+│  Ghi kết quả vào: pipeline/docs/runtime/DEBATE_LOG.md       │
 └─────────────────────────────────────────────────────────────┘
                 │
       ┌─────────┴──────────────┐
       ▼ APPROVED               ▼ REJECTED
-   Executor chạy            Executor đọc DEBATE_LOG → fix → re-VERIFY
-   Phase 6+7 (Commit+Report) Reviewer kiểm tra lại
-                             (tối đa REVIEW_MAX_RETRIES lần)
-                                      │
-                             Vẫn REJECTED sau max retries?
-                                      ▼
-                             Executor ghi BLOCKERS/<TASK_ID>.md
-                             Task → [!] BLOCKED
-                             Tự động chuyển sang task TODO tiếp theo
+   Harness Native Commit     Executor đọc DEBATE_LOG → fix → re-VERIFY
+   (Tự động commit git,      Reviewer kiểm tra lại
+   tiết kiệm 1 lần LLM)      (tối đa REVIEW_MAX_RETRIES lần)
+                                       │
+                              Vẫn REJECTED sau max retries?
+                                       ▼
+                              Executor ghi BLOCKERS/<TASK_ID>.md
+                              Task → [!] BLOCKED
+                              Tự động chuyển sang task TODO tiếp theo
 ```
 
 ### Tùy chỉnh Reviewer Prompt
@@ -177,15 +175,16 @@ Chạy `agy models` để xem danh sách. Ví dụ:
 
 ### State machine khi Dual-Model
 
-| Trạng thái | Model | Action |
-|-----------|-------|--------|
-| `EXECUTING` | Executor | PHASE 0-4 (ORIENT→VERIFY), chạy verify.py |
-| `REVIEWING` | Reviewer (khác) | PHASE 5, đọc git diff + tier1 summary. Fresh agy conversation. |
+| Trạng thái | Model / Engine | Action |
+|-----------|----------------|--------|
+| `EXECUTING` | Executor | PHASE 0-4 + PHASE 7, chạy verify.py, update STATUS.md |
+| `REVIEWING` | Reviewer (khác) | PHASE 5, đọc git diff HEAD + tier1 summary. Fresh agy conversation. (Skip nếu diff rỗng) |
 | `REVIEW_REJECTED` | Executor | Fix dựa trên DEBATE_LOG, re-verify. Max REVIEW_MAX_RETRIES cycles. |
 | `REVIEW_BLOCKED` | Executor | Hết retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
-| `COMMITTING` | Executor | PHASE 6-7, atomic git commits + update runtime docs |
+| `COMMITTING` | Harness Native | Native git commit tự động khi APPROVED (Tiết kiệm 1 phiên LLM) |
 
 > ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Executor tự thực hiện đủ Phase 0-7.
+
 
 ---
 
