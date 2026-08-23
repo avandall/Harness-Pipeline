@@ -34,10 +34,10 @@ fi
 
 # 1b. Copy .agents configuration directory if not existing in target
 AGENTS_SRC=""
-if [[ -d "${REPO_DIR}/.agents" ]]; then
-  AGENTS_SRC="${REPO_DIR}/.agents"
-elif [[ -d "${PIPELINE_DIR}/.agents" ]]; then
+if [[ -d "${PIPELINE_DIR}/.agents" ]]; then
   AGENTS_SRC="${PIPELINE_DIR}/.agents"
+elif [[ -d "${REPO_DIR}/.agents" ]]; then
+  AGENTS_SRC="${REPO_DIR}/.agents"
 fi
 
 if [[ -n "${AGENTS_SRC}" ]]; then

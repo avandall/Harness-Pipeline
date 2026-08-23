@@ -6,9 +6,30 @@
 
 ---
 
+## 🚦 PHÂN ĐỊNH CHẾ ĐỘ HOẠT ĐỘNG (OPERATING MODES & GUARDRAILS)
+
+AI làm việc trong workspace này cần phân biệt rõ **2 CHẾ ĐỘ HOẠT ĐỘNG**:
+
+### 🟢 CHẾ ĐỘ 1: INTERACTIVE ASSISTANT (Chat / Fix bug / Thảo luận trong IDE GUI)
+- **Khi nào áp dụng:** Khi người dùng đang chat trực tiếp, yêu cầu giải thích, thảo luận kiến trúc, debug hoặc yêu cầu sửa lỗi trong khung chat của IDE.
+- **QUY TẮC CẤM & HÀNH XỬ:**
+  1. ❌ **TUYỆT ĐỐI KHÔNG TỰ Ý CHẠY `harness.sh`** hoặc các vòng lặp tự động trừ khi người dùng ra lệnh rõ ràng (ví dụ: *"Hãy chạy harness.sh"*).
+  2. ❌ **KHÔNG tự ý can thiệp vào chu trình Ralph loop**, không tự ý ghi đè/sửa đổi các file runtime (`STATUS.md`, `PLAN.md`, `CURRENT_TASK.md`, `PROGRESS_LOG.md`) khi đang thảo luận thông thường.
+  3. ❌ **KHÔNG tự ý git commit** theo convention của task trừ khi người dùng yêu cầu commit.
+  4. ✅ **Hành động:** Trả lời trực tiếp, giải thích ngắn gọn, phân tích bug, và sửa code theo đúng yêu cầu cụ thể của người dùng như một Senior Pair-Programmer.
+
+### 🤖 CHẾ ĐỘ 2: AUTONOMOUS RALPH LOOP (Chạy tự trị qua `harness.sh` / Headless CLI)
+- **Khi nào áp dụng:** Khi AI nhận được prompt xuất phát từ lệnh CLI `./harness.sh` (có tiền tố `[SINGLE-MODEL — TASK-BOUND SESSION ...]` hoặc `[DUAL-MODEL ...]`), hoặc khi người dùng ra lệnh rõ ràng *"Hãy chạy harness / Ralph loop"*.
+- **QUY TẮC HOẠT ĐỘNG:**
+  1. Tuân thủ 100% 10 Điều luật cốt lõi (Inline Constitution) và Quy trình 7 Phase dưới đây.
+  2. Lưu trữ toàn bộ progression state ra filesystem (`STATUS.md`, `PLAN.md`, `PROGRESS_LOG.md`).
+  3. Bắt buộc chạy `python3 pipeline/scripts/verify.py` và chỉ commit git khi task `[x] DONE`.
+
+---
+
 ## ⚡ Quick Reference & Inline Constitution (Token-Optimized)
 
-> ⚠️ **TỐI ƯU HÓA BỘ NHỚ AI:**
+> ⚠️ **TỐI ƯU HÓA BỘ NHỚ AI KHI CHẠY CHẾ ĐỘ TỰ TRỊ (MODE 2):**
 > Tất cả 10 Điều luật cốt lõi đã được ghi trực tiếp dưới đây.
 > **KHÔNG** tự ý gọi tool `view_file` để mở đọc lại các file tài liệu trong `pipeline/docs/core/` (`AGENT_CONSTITUTION.md`, `WORKFLOW_STANDARDS.md`, `HARNESS_PROTOCOL.md`) trừ khi người dùng yêu cầu hoặc khi gặp lỗi phức tạp cần tra cứu sâu.
 
