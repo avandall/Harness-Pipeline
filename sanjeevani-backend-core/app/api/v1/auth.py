@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -36,7 +37,7 @@ async def register_user(payload: UserCreate, db: DatabaseSession) -> User:
 @router.post("/login", response_model=Token)
 async def login(
     db: DatabaseSession,
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> Token:
     result = await db.execute(select(User).where(User.email == form_data.username.lower()))
     user = result.scalar_one_or_none()

@@ -1,16 +1,32 @@
-# Python
+# Python-generated files
 __pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
 
-# Agent Runtime Logs
-pipeline/docs/runtime/session_*.jsonl
-pipeline/docs/runtime/BLOCKERS/
+# Virtual environments
+.venv
 
-# Environment & Secrets
+# Environment variables & secrets
 .env
-*.key
-*.pem
+*.env
+
+# SQLite Data files
+data/*.db
+data/
+
+# OS / Windows rác metadata files
+*Zone.Identifier*
+*:Zone.Identifier
+*.log
+logs/
+
+
+# Agent Pipeline Transient Runtime Artifacts
+pipeline/docs/runtime/session_*.jsonl
+pipeline/docs/runtime/session_*.log
+pipeline/docs/runtime/ITERATIONS/
+pipeline/docs/runtime/VERIFICATION_REPORT.md
+pipeline/docs/runtime/DEBATE_LOG.md

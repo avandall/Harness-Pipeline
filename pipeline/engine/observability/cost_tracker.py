@@ -14,7 +14,7 @@ class CostTracker:
     }
 
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.total_prompt_tokens: int = 0
         self.total_completion_tokens: int = 0
         self.total_cost_usd: float = 0.0

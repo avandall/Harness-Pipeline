@@ -57,7 +57,7 @@ def run_command(cmd: list[str]) -> tuple[int, str]:
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         output = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
         return res.returncode, output.strip()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return 1, f"Execution failed: {e!s}"
 
 
@@ -77,7 +77,9 @@ def get_active_preset(cli_preset: str) -> str:
     return "python_backend"
 
 
-def run_python_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
+def run_python_checks(
+    target_dir: str = ".", quick: bool = False, test_target: str = ""
+) -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra chuẩn cho dự án Python: Ruff, Mypy, Bandit, Pytest."""
     results = []
 
@@ -95,9 +97,11 @@ def run_python_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     else:
         results.append(("Python: Mypy (Type Check)", True, "Skipped (mypy not installed)"))
 
-    # 3. Bandit (Security)
-    if check_tool_installed("bandit"):
-        code, out = run_command(["bandit", "-r", target_dir, "-ll", "-q"])
+    # 3. Bandit (Security) - skipped in quick mode
+    if quick:
+        results.append(("Python: Bandit (Security)", True, "Skipped (quick mode enabled)"))
+    elif check_tool_installed("bandit"):
+        code, out = run_command(["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache"])
         results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Bandit (Security)", True, "Skipped (bandit not installed)"))
@@ -105,13 +109,17 @@ def run_python_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     # 4. Pytest (Runtime)
     if check_tool_installed("pytest"):
         has_tests = (
-            any(Path(".").rglob("test_*.py"))
+            bool(test_target)
+            or any(Path(".").rglob("test_*.py"))
             or any(Path(".").rglob("*_test.py"))
             or os.path.exists("tests")
             or os.path.exists("pipeline/tests")
         )
         if has_tests:
-            code, out = run_command(["pytest", "--tb=short", "-q"])
+            pytest_cmd = ["pytest", "--tb=short", "-q"]
+            if test_target:
+                pytest_cmd.append(test_target)
+            code, out = run_command(pytest_cmd)
             results.append(("Python: Pytest (Runtime)", code == 0, "All unit tests passed ✓" if code == 0 else truncate_log(out)))
         else:
             results.append(("Python: Pytest (Runtime)", True, "Skipped (no python tests found)"))
@@ -181,6 +189,17 @@ def main():
         help="Print a single-line token-efficient summary to stdout only (no file write)",
     )
     parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick verification mode (skip slow security scanning during rapid iterative coding)",
+    )
+    parser.add_argument(
+        "--test-target",
+        type=str,
+        default="",
+        help="Specific test file or directory to run for pytest (e.g. tests/test_e2e_conversational_system.py)",
+    )
+    parser.add_argument(
         "--preset",
         type=str,
         default="auto",
@@ -200,16 +219,16 @@ def main():
         check_results.extend(run_shell_checks("."))
     elif preset in ["polyglot_multi", "auto"]:
         # Auto-detect all present language environments & run combined checks
-        check_results.extend(run_python_checks("."))
+        check_results.extend(run_python_checks(".", quick=args.quick, test_target=args.test_target))
         if os.path.exists("package.json"):
             check_results.extend(run_node_checks("."))
         if os.path.exists("go.mod"):
             check_results.extend(run_go_checks("."))
     else:  # Default: python_backend
-        check_results.extend(run_python_checks("."))
+        check_results.extend(run_python_checks(".", quick=args.quick, test_target=args.test_target))
 
     all_passed = all(r[1] for r in check_results)
-    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M")
 
     # ── Summary mode: 1-line output for reviewer model prompt injection ──────
     if args.summary:

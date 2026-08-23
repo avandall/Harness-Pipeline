@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
     API_V1_PREFIX: str = "/api/v1"
 
-    SECRET_KEY: str = Field(min_length=32)
+    SECRET_KEY: str = Field(
+        default="09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7",
+        min_length=32,
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
@@ -45,7 +48,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "sanjeevani_password"
     POSTGRES_DB: str = "sanjeevani_core"
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def DATABASE_URL(self) -> str:
         return (

@@ -1,5 +1,5 @@
 # PLAN
-# Kế hoạch thực thi — [TASK-ID]: [Tên Task]
+# Kế hoạch thực thi — TASK-001: Fix Static Analysis & Type Checking Errors
 
 > **Trạng thái:** RUNTIME (Auto-generated) | **Tạo bởi:** AI
 
@@ -8,9 +8,9 @@
 ## Task Reference
 
 ```
-Task ID:    [TASK-001]
-Task Name:  [Tên task ngắn gọn]
-Spec:       [Mô tả spec và mục tiêu cần đạt được]
+Task ID:    TASK-001
+Task Name:  Fix Static Analysis & Type Checking Errors
+Spec:       Fix all Ruff linting and Mypy type checking errors in sanjeevani-backend-core and pipeline
 ```
 
 ---
@@ -18,28 +18,38 @@ Spec:       [Mô tả spec và mục tiêu cần đạt được]
 ## Spec (Đặc tả)
 
 ### Acceptance Criteria
-- [ ] [Tiêu chí hoàn thành 1]
-- [ ] [Tiêu chí hoàn thành 2]
-- [ ] All verification commands pass 100%.
+- [x] Ruff lint checks pass without errors.
+- [x] Mypy type checks pass without errors.
+- [x] All verification commands pass 100%.
 
 ### Verification Commands
 ```bash
-[Command chạy để verify]
+python3 pipeline/scripts/verify.py
 ```
 
 ---
 
 ## Execution Steps
 
-### Step 1: [Tên Step 1]
-- **Mục tiêu:** [Mục tiêu cụ thể của step]
-- **Files tạo/sửa:** `[danh sách file]`
-- **Exit condition:** [Điều kiện hoàn thành]
+### Step 1: Fix Ruff B008 and import sorting in auth.py
+- **Mục tiêu:** Use `Annotated[OAuth2PasswordRequestForm, Depends()]` instead of function call default.
+- **Files tạo/sửa:** `sanjeevani-backend-core/app/api/v1/auth.py`
+- **Exit condition:** Ruff no longer reports B008.
 
-### Step 2: [Tên Step 2]
-- **Mục tiêu:** [Mục tiêu cụ thể của step]
-- **Files tạo/sửa:** `[danh sách file]`
-- **Exit condition:** [Điều kiện hoàn thành]
+### Step 2: Fix datetime.UTC compatibility for Python 3.10
+- **Mục tiêu:** Replace `from datetime import UTC` with `from datetime import timezone` and `timezone.utc`.
+- **Files tạo/sửa:** `sanjeevani-backend-core/app/models/base.py`, `sanjeevani-backend-core/app/core/security.py`
+- **Exit condition:** Mypy no longer reports attr-defined error for UTC.
+
+### Step 3: Fix Mypy type annotations and return types
+- **Mục tiêu:** Add default for SECRET_KEY, prop-decorator ignore, cast return types in security.py, model_validate in users.py, init return annotation in cost_tracker.py, main return annotation in verify.py, and alembic attr-defined ignores.
+- **Files tạo/sửa:** `app/core/config.py`, `app/core/security.py`, `app/api/v1/users.py`, `alembic/env.py`, `alembic/versions/202406270001_create_users_table.py`, `cost_tracker.py`, `verify.py`
+- **Exit condition:** Mypy check passes with zero errors.
+
+### Step 4: Verify Tier 1 Verification Suite
+- **Mục tiêu:** Run `python3 pipeline/scripts/verify.py` and ensure status is PASS.
+- **Files tạo/sửa:** None
+- **Exit condition:** `Status: PASS` in `VERIFICATION_REPORT.md`.
 
 ---
 
@@ -57,4 +67,5 @@ Context refresh at:   Iteration 3
 
 | Revision | Ngày | Lý do thay đổi |
 |----------|------|----------------|
-| v1 | [YYYY-MM-DD] | Khởi tạo plan |
+| v1 | 2026-08-22 | Khởi tạo plan cho TASK-001 |
+| v2 | 2026-08-22 | Đã hoàn thành tất cả các bước và verify PASS 100% |

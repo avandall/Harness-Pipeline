@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
+from alembic import context  # type: ignore[attr-defined]
 from app.core.config import settings
 from app.models.base import Base
 from sqlalchemy import pool
