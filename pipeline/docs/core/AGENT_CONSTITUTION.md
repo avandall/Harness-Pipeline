@@ -16,15 +16,15 @@ Conversation context = temporary working memory
 pipeline/docs/runtime/       = permanent authoritative state
 ```
 
-## Điều 2 — Read Before Write (Đọc trước khi viết)
+## Điều 2 — Just-In-Time Context & Memory on Disk (Nạp đúng lúc, lưu ra đĩa)
 
-Before generating any output or making any change, you MUST:
-1. Read `pipeline/docs/runtime/CURRENT_TASK.md` — understand the exact task scope
-2. Read `pipeline/docs/context/PROJECT_BRIEF.md` — understand project constraints
-3. Read `pipeline/docs/context/BOUNDARIES.md` — understand what you are NOT allowed to do
-4. Read `pipeline/docs/runtime/STATUS.md` (if exists) — understand current state
+Before generating any output or making any change:
+1. Use the Pre-Compiled Single Blueprint from `.agents/AGENTS.md` and the JIT payload injected by `harness.sh` (do NOT waste tool calls reading individual core files).
+2. Inspect `pipeline/docs/runtime/CURRENT_TASK.md` or `pipeline/docs/runtime/PLAN.md` to understand active task scope and sub-steps.
+3. Review `pipeline/docs/context/BOUNDARIES.md` constraints summarized in prompt.
+4. Verify current progression from `pipeline/docs/runtime/STATUS.md` if resuming a task.
 
-Never assume context. Always read it.
+Never hallucinate state. Rely on filesystem memory.
 
 ## Điều 3 — One Loop, One Scope (Mỗi vòng lặp, một phạm vi)
 
@@ -128,15 +128,12 @@ After each task is marked DONE, append a "Retrospective" section to `PROOF_OF_SO
 
 ---
 
-## Thứ tự đọc docs khi bắt đầu task mới
+## Cơ chế nạp Context JIT (Just-In-Time) khi bắt đầu task mới
 
 ```
-1. pipeline/docs/core/AGENT_CONSTITUTION.md        ← Bạn đang ở đây
-2. pipeline/docs/core/HARNESS_PROTOCOL.md          ← Hiểu cơ chế vòng lặp
-3. pipeline/docs/core/WORKFLOW_STANDARDS.md        ← Hiểu từng bước thực thi
-4. pipeline/docs/context/PROJECT_BRIEF.md          ← Hiểu dự án
-5. pipeline/docs/runtime/CURRENT_TASK.md           ← Hiểu task cụ thể
-6. pipeline/docs/context/BOUNDARIES.md             ← Biết giới hạn
-7. pipeline/docs/runtime/STATUS.md                 ← Biết trạng thái hiện tại
-→ Bắt đầu tạo/cập nhật pipeline/docs/runtime/PLAN.md
+1. .agents/AGENTS.md                          ← Single Blueprint nén sẵn (10 Điều luật + 7 Phase)
+2. Prompt Payload từ harness.sh               ← JIT Task Spec + Tech Context + Boundaries tóm tắt
+3. pipeline/docs/runtime/CURRENT_TASK.md       ← Ngữ cảnh task active lưu trên disk
+4. pipeline/docs/runtime/PLAN.md               ← Tạo/Cập nhật atomic steps
+→ AI thực thi tuần tự, chạy verify.py, cập nhật disk state và hoàn thành task.
 ```

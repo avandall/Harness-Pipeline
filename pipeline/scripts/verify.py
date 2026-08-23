@@ -57,8 +57,9 @@ def run_command(cmd: list[str]) -> tuple[int, str]:
         res = subprocess.run(cmd, capture_output=True, text=True, check=False)
         output = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
         return res.returncode, output.strip()
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return 1, f"Execution failed: {e!s}"
+
 
 
 def get_active_preset(cli_preset: str) -> str:

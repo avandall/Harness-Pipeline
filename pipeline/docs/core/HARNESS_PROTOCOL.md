@@ -77,18 +77,14 @@ Mỗi iteration kết thúc với một trong các exit codes/trạng thái sau:
 
 ---
 
-## 4. Context Management
+## 4. Context Management & Optimization
 
-### Quy tắc "Context Budget"
-- Mỗi fresh context, đọc tối đa **5 files** từ filesystem trước khi bắt đầu làm
-- Ưu tiên đọc: Constitution → Status → Tasks_list → Plan → Last Progress Log entry
-- KHÔNG đọc toàn bộ codebase — chỉ đọc files liên quan đến bước hiện tại
+### Quy tắc "Task-Bound Session & Context Pruning"
+1. **Task-Bound Session (Phiên Theo Task)**: Tất cả các bước nhỏ (Orient → Plan → Execute → Verify) của **CÙNG 1 Task** chạy liên tục trong 1 phiên hội thoại duy nhất. AI tận dụng 100% Prompt Caching và tốc độ phản hồi tức thì.
+2. **Flush Memory on Task Switch**: Chỉ khi Task hiện tại hoàn thành (`[x] DONE`) hoặc bị nghẽn (`[!] BLOCKED`), bộ nhớ phiên làm việc mới được làm sạch hoàn toàn trước khi chuyển sang nạp Task mới.
+3. **Context Pruning (Cắt Tỉa Ngữ Cảnh)**: Tự động trích xuất đúng nội dung Task Spec của task active từ `Tasks_list.md`. Cắt bỏ 80% văn bản quy trình dài dòng không liên quan.
+4. **Inline Constitution (Luật Nén Trực Tiếp)**: 10 Điều luật bất biến được nén trực tiếp trong `.agents/AGENTS.md` và prompt đầu vào. Không ép AI gọi tool `view_file` mở lại các file docs trùng lặp ở mỗi lần khởi động.
 
-### Chống "Context Rot"
-Context rot xảy ra khi một agent chạy quá lâu và bắt đầu lẫn lộn hoặc hallucinate. Phòng tránh bằng:
-1. **Fresh restart** sau mỗi N iterations (N được định nghĩa trong CURRENT_TASK.md)
-2. **State externalization**: Không bao giờ giữ state trong conversation — luôn write ra file
-3. **Atomic commits**: Mỗi commit là một checkpoint an toàn để reset về
 
 ---
 

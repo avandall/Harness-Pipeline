@@ -22,21 +22,18 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 
 ---
 
-## PHASE 0 — ORIENT (Định hướng)
+## PHASE 0 — ORIENT (Định hướng & Nạp Ngữ cảnh JIT)
 
-**Mục tiêu:** Hiểu đầy đủ context trước khi làm bất cứ điều gì.
+**Mục tiêu:** Nạp đúng và đủ bối cảnh cần thiết theo cơ chế Just-In-Time (JIT) & Prompt Caching.
 
-**Checklist:**
-- [ ] Đọc `pipeline/docs/core/AGENT_CONSTITUTION.md`
-- [ ] Đọc `pipeline/docs/context/PROJECT_BRIEF.md` → hiểu mục tiêu dài hạn
-- [ ] Đọc `pipeline/docs/runtime/CURRENT_TASK.md` → hiểu task ngay bây giờ
-- [ ] Đọc `pipeline/docs/context/BOUNDARIES.md` → biết giới hạn
-- [ ] Đọc `pipeline/docs/runtime/STATUS.md` nếu tồn tại → biết đang ở đâu
-- [ ] Đọc entry cuối của `pipeline/docs/runtime/PROGRESS_LOG.md` nếu tồn tại
+**Quy tắc nạp bối cảnh:**
+- 10 Điều luật Hiến pháp: Đã được nén sẵn inline trong `.agents/AGENTS.md` (không gọi tool mở file lẻ).
+- Bối cảnh Task hiện tại: Trích xuất trực tiếp Task Spec từ `Tasks_list.md` vào Prompt Cache của phiên làm việc.
+- Bối cảnh kỹ thuật: Nạp tóm tắt `TECH_CONTEXT.md` (Tech stack) và `BOUNDARIES.md` (Scope file được sửa) ở đầu task.
+- Trạng thái runtime: Đọc `runtime/PLAN.md` (nếu đã có kế hoạch từ bước trước) hoặc `runtime/STATUS.md`.
 
-**Output:** Hiểu rõ: Tôi đang làm gì? Cho ai? Với những giới hạn nào? Đang ở bước nào?
+**Output:** Hiểu rõ: Task này cần đạt được gì? Tech stack là gì? File nào được sửa/cấm sửa? Bước atomic tiếp theo là gì?
 
-**Thời gian tối đa:** Không bắt đầu làm gì cho đến khi trả lời được 3 câu hỏi trên.
 
 ---
 

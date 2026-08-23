@@ -103,25 +103,47 @@ Tại root dự án, chạy lệnh duy nhất:
 
 ## 5. Tùy Chọn Nâng Cao
 
-### A. Chế độ Dual-Model Review (Phản biện chống bug ngầm)
+### A. Chọn Task Hoặc Dải Task Cần Chạy (`--tasks` / `-t`)
+Khi bạn chỉ muốn AI chạy một số task chỉ định thay vì chạy toàn bộ backlog:
+```bash
+# Chạy dải task từ TASK-001 đến TASK-005
+./harness.sh --tasks 1..5
+
+# Chỉ chạy đúng task 6 và task 9
+./harness.sh --tasks 6,9
+
+# Kết hợp cả dải số và liệt kê
+./harness.sh --tasks 1..5,8,10
+```
+
+### B. Chế độ Dual-Model Review (Phản biện chống bug ngầm)
 Nếu task phức tạp và bạn muốn dùng 1 AI Model chuyên viết code (Executor) và 1 AI Model khác nhảy vào review phản biện qua `git diff`:
 ```bash
 ./harness.sh --review-model gemini-3.6-flash-low
 ```
 
-### B. Giới hạn số lượng vòng lặp
+### C. Giới hạn số lượng vòng lặp
 ```bash
 ./harness.sh --max-iter 20
 ```
 
-### C. Chạy trực tiếp CLI Python (Dùng khi debug/test step lẻ)
+### D. Chạy trực tiếp CLI Python (Dùng khi debug/test step lẻ)
 ```bash
 python3 bin/agent-run
 ```
 
 ---
 
-## 6. Giải Quyết Khi AI Bị Kẹt (`BLOCKED.md`)
+## 6. Tối Ưu Hiệu Năng & Tiết Kiệm Token (Task-Bound Session & Context Pruning)
+
+Hệ thống tự động áp dụng các chuẩn tối ưu cao cấp:
+1. **Task-Bound Session**: Tất cả bước nhỏ trong cùng 1 Task được chạy liên tục trong 1 phiên hội thoại. Tận dụng 100% Prompt Caching của LLM. Bộ nhớ phiên được làm sạch (Flush Memory) khi đổi Task.
+2. **Context Pruning**: Script tự động trích xuất đúng nội dung Task Spec của task active từ `Tasks_list.md`, cắt bỏ 80% văn bản dư thừa không liên quan.
+3. **Inline Constitution**: 10 Điều luật cốt lõi được nén trực tiếp trong `.agents/AGENTS.md` và prompt, loại bỏ các lượt gọi tool `view_file` mở lại các file docs trùng lặp ở mỗi lần khởi động.
+
+---
+
+## 7. Giải Quyết Khi AI Bị Kẹt (`BLOCKED.md`)
 
 Khi AI gặp vấn đề vượt quá quyền hạn hoặc không thể tự khắc phục:
 1. AI sẽ ghi lý do chi tiết vào file `pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md` và đánh dấu dòng task trong `Tasks_list.md` thành `[!] BLOCKED`.
@@ -135,12 +157,15 @@ Khi AI gặp vấn đề vượt quá quyền hạn hoặc không thể tự kh�
 
 ---
 
-## 7. Bảng Tra Cứu Lệnh Nhanh (Cheatsheet)
+## 8. Bảng Tra Cứu Lệnh Nhanh (Cheatsheet)
 
 | Nhu cầu | Lệnh chạy từ Terminal |
 |---|---|
 | **Cài pipeline vào dự án mới** | `./pipeline/setup.sh /path/to/du-an-moi` |
 | **Bắt đầu chạy tự động toàn bộ task** | `./harness.sh` |
+| **Chỉ chạy dải task chọn lọc (ví dụ 1..5)** | `./harness.sh --tasks 1..5` |
+| **Chỉ chạy các task lẻ (ví dụ 6 và 9)** | `./harness.sh --tasks 6,9` |
 | **Chạy tự động + Phản biện 2 model** | `./harness.sh --review-model gemini-3.6-flash-low` |
 | **Kiểm tra chất lượng code Tier 1** | `python3 pipeline/scripts/verify.py` |
 | **Chạy unit tests của Core Engine** | `python3 -m pytest pipeline/tests/test_engine.py` |
+

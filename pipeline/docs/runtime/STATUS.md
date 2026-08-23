@@ -8,13 +8,13 @@
 ## Current State
 
 ```
-Current Task ID: TASK-001
-Task:           Fix Static Analysis & Type Checking Errors
-Next Task:      None
-Phase:          ALL_DONE
-Current Step:   PHASE 7: REPORT
+Current Task ID: [TASK-ID]
+Task:           [Tên Task đang thực thi]
+Next Task:      [TASK-ID tiếp theo]
+Phase:          INIT
+Current Step:   PHASE 0: ORIENT
 Iteration:      Iteration 1
-Last Updated:   2026-08-22 18:12
+Last Updated:   [YYYY-MM-DD HH:MM]
 ```
 
 ---
@@ -22,9 +22,7 @@ Last Updated:   2026-08-22 18:12
 ## State Visual
 
 ```
-ORIENT → PLANNING → EXECUTING → REVIEWING → COMMITTING → [DONE]
-                                                            ↑
-                                                       [ALL_DONE]
+[INIT] → PLANNING → EXECUTING → REVIEWING → COMMITTING → [DONE]
 ```
 
 ---
@@ -32,9 +30,9 @@ ORIENT → PLANNING → EXECUTING → REVIEWING → COMMITTING → [DONE]
 ## Last Action
 
 ```
-Action:   Sửa toàn bộ lỗi Ruff & Mypy và verify PASS 100%
-Result:   PASS
-Time:     2026-08-22 18:12
+Action:   Khởi tạo runtime session
+Result:   READY
+Time:     [YYYY-MM-DD HH:MM]
 ```
 
 ---
@@ -42,34 +40,17 @@ Time:     2026-08-22 18:12
 ## Next Action
 
 ```
-Action:   Reviewer Model sẽ tiến hành Tier 2 Cognitive Review (Phase 5) và harness sẽ commit git sau khi APPROVED.
+Action:   AI đọc bối cảnh Task active và tạo PLAN.md
 Priority: P0
 Blocks:   None
 ```
 
 ---
 
-## Progress Summary
+## Quick Reference
 
 ```
-Tasks completed: 1 / 1 (100%)
-Tasks remaining: 0
+Active Files:     [Danh sách file đang làm việc]
+Blocked Reason:   None
+Verification:     Tier 1 (verify.py) Pending
 ```
-
----
-
-## Flags
-
-```
-🚩 BLOCKED:     NO
-⚠️ RISK:        NONE
-📝 NEEDS_INPUT: NONE
-```
-
----
-
-## Quick Links
-
-- [PROJECT_BRIEF.md](../context/PROJECT_BRIEF.md) — Tóm tắt dự án & DoD
-- [PROGRESS_LOG.md](./PROGRESS_LOG.md) — Xem lịch sử chi tiết
-- [PROOF_OF_SOLUTION.md](./PROOF_OF_SOLUTION.md) — Bằng chứng giải pháp hoàn chỉnh

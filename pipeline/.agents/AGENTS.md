@@ -6,17 +6,33 @@
 
 ---
 
-## Bắt buộc đọc trước khi làm bất cứ điều gì
+## ⚡ Quick Reference & Inline Constitution (Token-Optimized)
 
-Khi bắt đầu bất kỳ task nào trong workspace này, bạn PHẢI đọc các files sau theo thứ tự (trong `pipeline/docs/` hoặc `pipeline/docs/`):
+> ⚠️ **TỐI ƯU HÓA BỘ NHỚ AI:**
+> Tất cả 10 Điều luật cốt lõi đã được ghi trực tiếp dưới đây.
+> **KHÔNG** tự ý gọi tool `view_file` để mở đọc lại các file tài liệu trong `pipeline/docs/core/` (`AGENT_CONSTITUTION.md`, `WORKFLOW_STANDARDS.md`, `HARNESS_PROTOCOL.md`) trừ khi người dùng yêu cầu hoặc khi gặp lỗi phức tạp cần tra cứu sâu.
 
-1. `pipeline/docs/core/AGENT_CONSTITUTION.md` — 10 điều luật bất biến
-2. `pipeline/docs/core/HARNESS_PROTOCOL.md` — Ralph Loop và state machine
-3. `pipeline/docs/core/WORKFLOW_STANDARDS.md` — Pipeline 7 phases
-4. `pipeline/docs/context/PROJECT_BRIEF.md` — Mô tả dự án
-5. `pipeline/docs/runtime/CURRENT_TASK.md` — Task đang làm
-6. `pipeline/docs/context/BOUNDARIES.md` — Giới hạn quyền hạn
-7. `pipeline/docs/runtime/STATUS.md` — Trạng thái hiện tại (nếu tồn tại)
+### 📜 10 Điều Luật Bất Biến (Inline Constitution)
+1. **Memory on Disk**: Lưu state ra filesystem (`STATUS.md`, `PLAN.md`, `PROGRESS_LOG.md`), KHÔNG giữ trong chat conversation.
+2. **Atomic Steps**: Chỉ thực hiện 1 bước atomic nhỏ mỗi lần.
+3. **Deterministic Verification**: Bắt buộc chạy `python3 pipeline/scripts/verify.py` trước khi báo hoàn thành.
+4. **Proof Over Promise**: Không bao giờ claim "đã xong" nếu chưa verify PASS 100%.
+5. **No Blind Edits**: Xem file trước khi sửa, giữ nguyên comments/docstrings cũ.
+6. **No Phantom Tools**: Chỉ dùng tools có sẵn trong môi trường.
+7. **Strict Scope**: Không sửa các file ngoài phạm vi chỉ định trong `BOUNDARIES.md`.
+8. **1 Task = 1 Commit**: CHỈ GIT COMMIT KHI TASK ĐÃ HOÀN THÀNH (`[x] DONE`). Không commit trung gian.
+9. **Never Block Overnight**: Gặp blocker $\rightarrow$ ghi `BLOCKERS/<TASK_ID>.md`, đổi task thành `[!] BLOCKED`, chuyển sang task TODO tiếp theo.
+10. **Clean Working Tree**: Dọn sạch scratch files và để working tree sạch sẽ.
+
+### 🔄 Quy Trình 7 Phase Thực Thi Chuẩn (Tóm Tắt)
+- **Phase 0: ORIENT** $\rightarrow$ Nạp Task Spec từ `Tasks_list.md` + Tech Context & Boundaries (JIT, không đọc core docs lẻ).
+- **Phase 1: SPEC** $\rightarrow$ Xác định Acceptance Criteria & Verification Method trước khi code.
+- **Phase 2: PLAN** $\rightarrow$ Tạo/cập nhật `runtime/PLAN.md` chia nhỏ thành 2–4 atomic steps.
+- **Phase 3: EXECUTE** $\rightarrow$ Thực thi từng step, đọc file trước khi sửa, cập nhật state ra disk.
+- **Phase 4: VERIFY** $\rightarrow$ Chạy `python3 pipeline/scripts/verify.py` (Tier 1 CLI), sửa lỗi đến khi PASS 100%.
+- **Phase 5: REVIEW** $\rightarrow$ Phản biện nhận thức Tier 2 qua Git Diff (`DEBATE_LOG.md`).
+- **Phase 6: COMMIT** $\rightarrow$ Commit Git khi task `[x] DONE` (Format: `[TASK-ID] <type>(<scope>): <mô tả>`).
+- **Phase 7: REPORT** $\rightarrow$ Ghi kết quả vào `runtime/STATUS.md` & `runtime/PROGRESS_LOG.md`.
 
 ---
 
