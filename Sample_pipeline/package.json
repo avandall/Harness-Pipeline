@@ -1,0 +1,31 @@
+{
+  "name": "harness-engineering-playbook",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "A real-world harness-engineering example: the agent environment (routing docs, prompts, runners, gates, evidence packs, self-tests, control panel) around a Shopify theme migration. The theme under theme/ is the product; everything else is the harness.",
+  "scripts": {
+    "dev": "bun demo/server.mjs",
+    "panel": "node demo/server.mjs",
+    "migrate": "scripts/migrate.sh",
+    "migrate:one-go": "scripts/migrate.sh --one-go",
+    "migrate:plan": "scripts/plan.sh",
+    "migrate:execute": "scripts/ralph.sh",
+    "migrate:follow-up": "scripts/follow-up.sh",
+    "test": "playwright test",
+    "test:orchestration": "bash scripts/agent-runner-selftest.sh && bash scripts/plan-selftest.sh && bash scripts/ralph-selftest.sh && bash scripts/migrate-selftest.sh && bash scripts/follow-up-selftest.sh",
+    "vqa:capture": "node scripts/visual-diff/capture.mjs",
+    "vqa:compare": "node scripts/visual-diff/compare.mjs",
+    "theme:push": "shopify theme push --path theme --theme $SHOPIFY_THEME_ID --store $SHOPIFY_STORE",
+    "theme:pull": "shopify theme pull --path theme --theme $SHOPIFY_THEME_ID --store $SHOPIFY_STORE",
+    "theme:list": "shopify theme list --store $SHOPIFY_STORE"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "playwright": "^1.48.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

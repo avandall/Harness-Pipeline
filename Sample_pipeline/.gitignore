@@ -1,0 +1,49 @@
+# The .gitignore is POLICY, not housekeeping. It decides what counts as durable memory (tracked)
+# and what is noise, secret, or regenerable (ignored). Read it as a harness-engineering artifact.
+
+# OS / editor
+.DS_Store
+*.log
+node_modules/
+.vscode/
+.idea/
+
+# Claude Code local (personal permissions/overrides — .claude/commands + .claude/rules STAY tracked:
+# they are part of the harness; settings.local.json is per-person)
+.claude/settings.local.json
+
+# Shopify CLI local state (theme dev previews, etc.)
+.shopify/
+theme/.shopify/
+
+# Secrets — never commit real values (use .env.example as the template)
+.env
+.env.*
+!.env.example
+
+# Node — package-lock.json is intentionally COMMITTED for reproducible installs
+
+# Visual-diff harness output + Playwright artifacts (regenerable evidence, large)
+scripts/visual-diff/out/
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
+
+# Loop runtime state (per-run logs, active-page marker, BLOCKED marker, minted API token cache).
+# Regenerable and machine-specific — the durable record lives in migrations/<page>/ and git.
+.ralph/
+
+# Migration evidence packs: KEEP the durable record (contract.json, assets.json, dynamics.json,
+# visual-deltas.md, gate.json, interactions.md, reports/final.md, reports/visual-verify.md);
+# IGNORE the big regenerable captures + per-section diffs, at ANY depth under reports/.
+migrations/*/source/
+migrations/*/replica/
+migrations/*/reports/*.png
+migrations/*/reports/*.json
+migrations/*/reports/**/*.png
+migrations/*/reports/**/*.json
+
+# Client-provided external design sources (large binaries, brand-specific — never in the reusable
+# skeleton; the convention is documented in reference/README.md instead)
+external/

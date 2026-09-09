@@ -1,0 +1,80 @@
+{
+  "page": "home",
+  "source": "https://source-site.com/",
+  "preview": "https://__SHOPIFY_STORE__/?preview_theme_id=__SHOPIFY_THEME_ID__",
+  "viewports": { "desktop": 1440, "tablet": 768, "mobile": 390 },
+  "_note": "Worked example. Copy to migrations/<page>/contract.json and edit. sourceSelector = a stable selector for the section on the source (live URL or the served __REF__ export); replicaSelector = the data-section-key you add to the Liquid section root during BUILD. The hero is its OWN section here (the headingless hero an older heading-anchored gate folded into 'header' and never scored). `targets` is filled by capture-source.mjs. An overlay-class section (age-gate / cookie wall) is diffed in a separate --keep-overlays pass.",
+  "sections": [
+    {
+      "key": "age-gate",
+      "class": "overlay",
+      "sourceSelector": ".age-gate, [data-age-gate]",
+      "replicaSelector": "[data-section-key='age-gate']",
+      "mustMatch": ["full-screen backdrop", "logo", "heading", "ENTER button"],
+      "targets": {}
+    },
+    {
+      "key": "header",
+      "class": "structural",
+      "sourceSelector": "header, .site-header",
+      "replicaSelector": "[data-section-key='header']",
+      "mustMatch": ["height", "logo asset + size", "left/right nav groups", "icons (search/account/cart)", "sticky behaviour"],
+      "checks": [
+        { "selector": "[data-section-key='header'] nav a", "expect": { "count": 5 } },
+        { "selector": "[data-section-key='header'] .logo img", "expectByViewport": { "desktop": { "minHeight": 36 }, "mobile": { "minHeight": 28 } } }
+      ],
+      "targets": {}
+    },
+    {
+      "key": "hero",
+      "class": "structural",
+      "sourceSelector": ".home-hero",
+      "replicaSelector": "[data-section-key='hero']",
+      "mustMatch": ["height", "background video/poster", "heading", "CTA row", "spacing"],
+      "checks": [
+        { "selector": "[data-section-key='hero'] .button", "expect": { "count": 1 } },
+        { "selector": "[data-section-key='hero'] a.button", "expect": { "hrefEndsWith": "/collections/all" } },
+        { "selector": "[data-section-key='hero'] .hero-media", "expectByViewport": { "desktop": { "aspect": 1.78 }, "mobile": { "aspect": 0.75 } } }
+      ],
+      "targets": {}
+    },
+    {
+      "key": "product-grid",
+      "class": "content",
+      "sourceSelector": "#products, .product-grid",
+      "replicaSelector": "[data-section-key='product-grid']",
+      "mustMatch": ["heading", "4 cards on desktop / 2 on mobile", "card image aspect 1:1", "price + CTA"],
+      "checks": [
+        { "selector": "[data-section-key='product-grid'] .card", "expect": { "count": 4 } },
+        { "selector": "[data-section-key='product-grid'] .card img", "expect": { "aspect": 1.0 } }
+      ],
+      "targets": {}
+    },
+    {
+      "key": "feature-story",
+      "class": "content",
+      "sourceSelector": ".feature-story",
+      "replicaSelector": "[data-section-key='feature-story']",
+      "mustMatch": ["image left / text right on desktop", "stacked on mobile", "heading size", "body copy", "link"],
+      "targets": {}
+    },
+    {
+      "key": "newsletter",
+      "class": "content",
+      "sourceSelector": ".newsletter, #newsletter",
+      "replicaSelector": "[data-section-key='newsletter']",
+      "mustMatch": ["background color band", "heading", "email form + button"],
+      "checks": [ { "selector": "[data-section-key='newsletter'] form input[type='email']", "expect": { "count": 1 } } ],
+      "targets": {}
+    },
+    {
+      "key": "footer",
+      "class": "structural",
+      "sourceSelector": "footer",
+      "replicaSelector": "[data-section-key='footer']",
+      "mustMatch": ["link columns (labels + destinations)", "social icons", "legal text", "bottom bar"],
+      "checks": [ { "selector": "[data-section-key='footer'] a", "expect": { "count": 14 } } ],
+      "targets": {}
+    }
+  ]
+}

@@ -1,19 +1,33 @@
 #!/usr/bin/env bash
 # =============================================================================
-# setup.sh — Single-Command Installer & Onboarding for Enterprise Agent Pipeline
+# setup.sh — Next-Gen Installer & Infrastructure Sync for Enterprise Pipeline
 # 
 # Usage:
-#   ./pipeline/setup.sh                       # Setup in current directory
-#   ./pipeline/setup.sh /path/to/target-proj   # Install pipeline into target project
+#   ./pipeline/setup.sh /path/to/target-proj              # Install or update infrastructure
+#   ./pipeline/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
+#   ./pipeline/setup.sh /path/to/target-proj --override-all # Force-overwrite everything including context
 # =============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_DIR="$(cd "${PIPELINE_DIR}/.." && pwd)"
 
 TARGET_DIR="${1:-.}"
+OVERRIDE_ALL=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --override-all) OVERRIDE_ALL=true ;;
+    --override|--force|-f) ;; # Handled by default overwrite of infra
+  esac
+done
+
+# Shift target if first arg is not an option
+if [[ "$TARGET_DIR" == --* ]]; then
+  TARGET_DIR="."
+fi
+
 mkdir -p "${TARGET_DIR}"
 TARGET_DIR="$(cd "${TARGET_DIR}" && pwd)"
 
@@ -22,85 +36,77 @@ if [[ "${TARGET_DIR}" == */pipeline ]]; then
   TARGET_DIR="$(dirname "${TARGET_DIR}")"
 fi
 
-echo "🚀 Installing Enterprise Agent Pipeline into: [${TARGET_DIR}]..."
+echo "🚀 Installing / Updating Enterprise Agent Pipeline into: [${TARGET_DIR}]..."
 
-
-# 1. Copy pipeline directory if target is different from source
+# 1. Copy / Update pipeline directory
 if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
-  echo "📦 Copying pipeline infrastructure..."
+  echo "📦 Updating pipeline infrastructure (scripts, core protocols, presets, engine, prompts)..."
   mkdir -p "${TARGET_DIR}/pipeline"
-  cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
-fi
 
-# 1b. Copy .agents configuration directory if not existing in target
-AGENTS_SRC=""
-if [[ -d "${PIPELINE_DIR}/.agents" ]]; then
-  AGENTS_SRC="${PIPELINE_DIR}/.agents"
-elif [[ -d "${REPO_DIR}/.agents" ]]; then
-  AGENTS_SRC="${REPO_DIR}/.agents"
-fi
-
-if [[ -n "${AGENTS_SRC}" ]]; then
-  if [[ ! -d "${TARGET_DIR}/.agents" ]]; then
-    echo "📦 Copying .agents configuration..."
-    mkdir -p "${TARGET_DIR}/.agents"
-    cp -r "${AGENTS_SRC}"/. "${TARGET_DIR}/.agents/"
+  if [[ -d "${TARGET_DIR}/pipeline/docs/context" ]] && [[ "$OVERRIDE_ALL" == false ]]; then
+    # Preserve existing context while updating infrastructure
+    echo "🛡️ Preserving existing project context (PROJECT_BRIEF.md, Tasks_list.md)..."
+    TMP_CONTEXT="$(mktemp -d)"
+    cp -r "${TARGET_DIR}/pipeline/docs/context"/* "$TMP_CONTEXT/" 2>/dev/null || true
+    
+    cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
+    
+    mkdir -p "${TARGET_DIR}/pipeline/docs/context"
+    cp -r "$TMP_CONTEXT"/* "${TARGET_DIR}/pipeline/docs/context/" 2>/dev/null || true
+    rm -rf "$TMP_CONTEXT"
+    echo "✅ Infrastructure updated, project context preserved."
   else
-    echo "⏩ .agents directory already exists in target, skipping..."
+    if [[ "$OVERRIDE_ALL" == true ]]; then
+      echo "⚠️ --override-all specified: Overwriting entire pipeline including context files."
+    fi
+    cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
   fi
+
+  # Purge any cache or runtime residue from target pipeline template
+  echo "🧹 Ensuring target pipeline is clean (no cache, no temporary logs)..."
+  find "${TARGET_DIR}/pipeline" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+  find "${TARGET_DIR}/pipeline" -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+  find "${TARGET_DIR}/pipeline" -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+  find "${TARGET_DIR}/pipeline" -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+  rm -rf "${TARGET_DIR}/pipeline/.ralph" \
+         "${TARGET_DIR}/pipeline/docs/runtime/session_*.log" \
+         "${TARGET_DIR}/pipeline/docs/runtime/PLAN_SEAL.sha256" \
+         "${TARGET_DIR}/pipeline/docs/runtime/ITERATIONS"/iter_*.md 2>/dev/null || true
 fi
 
-# 2. Make CLI scripts executable
+# 2. Update .agents configuration directory in target (ALWAYS OVERRIDE TO ENSURE FRESH ROUTER)
+echo "📦 Updating .agents router adapter and CLAUDE.md..."
+mkdir -p "${TARGET_DIR}/.agents"
+if [[ -f "${PIPELINE_DIR}/.agents/AGENTS.md" ]]; then
+  cp -f "${PIPELINE_DIR}/.agents/AGENTS.md" "${TARGET_DIR}/.agents/AGENTS.md"
+fi
+if [[ -f "${PIPELINE_DIR}/CLAUDE.md" ]]; then
+  cp -f "${PIPELINE_DIR}/CLAUDE.md" "${TARGET_DIR}/CLAUDE.md"
+fi
+
+# 3. Make CLI scripts executable
 if [[ -d "${TARGET_DIR}/pipeline/scripts" ]]; then
-  chmod +x "${TARGET_DIR}/pipeline/scripts/"* 2>/dev/null || true
+  chmod +x "${TARGET_DIR}/pipeline/scripts/"*.sh "${TARGET_DIR}/pipeline/scripts/"*.py "${TARGET_DIR}/pipeline/scripts/"*.mjs 2>/dev/null || true
 fi
 
-# 3. Create root convenience wrapper harness.sh if not existing
+# 4. Overwrite / Update root convenience wrapper harness.sh
 ROOT_HARNESS="${TARGET_DIR}/harness.sh"
-if [[ ! -f "${ROOT_HARNESS}" ]]; then
-  echo "🔗 Creating root convenience wrapper harness.sh..."
-  cat << 'EOF' > "${ROOT_HARNESS}"
+echo "🔗 Updating root convenience wrapper harness.sh..."
+cat << 'EOF' > "${ROOT_HARNESS}"
 #!/usr/bin/env bash
 exec "$(dirname "$0")/pipeline/scripts/harness.sh" "$@"
 EOF
-  chmod +x "${ROOT_HARNESS}"
-fi
+chmod +x "${ROOT_HARNESS}"
 
-# 4. Create pipeline/setup.sh wrapper if not existing
+# 5. Overwrite / Update pipeline/setup.sh wrapper
 PIPELINE_SETUP="${TARGET_DIR}/pipeline/setup.sh"
-if [[ ! -f "${PIPELINE_SETUP}" ]]; then
-  cat << 'EOF' > "${PIPELINE_SETUP}"
+cat << 'EOF' > "${PIPELINE_SETUP}"
 #!/usr/bin/env bash
 exec "$(dirname "$0")/scripts/setup.sh" "$@"
 EOF
-  chmod +x "${PIPELINE_SETUP}"
-fi
+chmod +x "${PIPELINE_SETUP}"
 
-# Also ensure pipeline/setup.sh exists in source if we ran in source
-SOURCE_PIPELINE_SETUP="${PIPELINE_DIR}/setup.sh"
-if [[ ! -f "${SOURCE_PIPELINE_SETUP}" ]]; then
-  cat << 'EOF' > "${SOURCE_PIPELINE_SETUP}"
-#!/usr/bin/env bash
-exec "$(dirname "$0")/scripts/setup.sh" "$@"
-EOF
-  chmod +x "${SOURCE_PIPELINE_SETUP}"
-fi
-
-# 5. Create root convenience wrapper bin/agent-run if not existing
-mkdir -p "${TARGET_DIR}/bin"
-ROOT_AGENT_RUN="${TARGET_DIR}/bin/agent-run"
-if [[ ! -f "${ROOT_AGENT_RUN}" ]]; then
-  echo "🔗 Creating root convenience wrapper bin/agent-run..."
-  cat << 'EOF' > "${ROOT_AGENT_RUN}"
-#!/usr/bin/env bash
-exec python3 "$(dirname "$0")/../pipeline/scripts/agent-run" "$@"
-EOF
-  chmod +x "${ROOT_AGENT_RUN}"
-fi
-
-
-
-# 6. Create base pyproject.toml if not existing in target project root
+# 6. Initialize pyproject.toml if missing
 PYPROJECT="${TARGET_DIR}/pyproject.toml"
 if [[ ! -f "${PYPROJECT}" ]]; then
   echo "📝 Initializing base pyproject.toml for pipeline dependencies..."
@@ -121,9 +127,7 @@ dependencies = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pytest>=7.0.0",
-    "bandit>=1.7.0",
-    "opentelemetry-api>=1.20.0",
-    "opentelemetry-sdk>=1.20.0"
+    "bandit>=1.7.0"
 ]
 
 [tool.ruff]
@@ -145,24 +149,15 @@ fi
 # 7. Create .gitignore entries if needed
 GITIGNORE="${TARGET_DIR}/.gitignore"
 if [[ -f "${GITIGNORE}" ]]; then
-  if ! grep -q "session_\*\.jsonl" "${GITIGNORE}"; then
+  if ! grep -q "\.ralph" "${GITIGNORE}"; then
     echo "" >> "${GITIGNORE}"
-    echo "# Agent Pipeline Logs" >> "${GITIGNORE}"
+    echo "# Agent Pipeline Run Logs & State" >> "${GITIGNORE}"
+    echo "pipeline/.ralph/" >> "${GITIGNORE}"
     echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
   fi
 fi
 
-echo "✅ Pipeline successfully installed!"
 echo ""
-echo "📋 Next steps:"
-echo "  1. Edit pipeline/docs/context/PROJECT_BRIEF.md with your project goal."
-echo "  2. Preset Language Selector (default: python_backend):"
-echo "     • Python:     active_preset: \"python_backend\""
-echo "     • Node/React: active_preset: \"node_react\""
-echo "     • Go:         active_preset: \"go_backend\""
-echo "     • Polyglot:   active_preset: \"polyglot_multi\" (Auto-detects Python+Node+Go)"
-echo "     (Change in pipeline/presets/active_preset.yaml)"
-echo "  3. Edit pipeline/docs/context/Tasks_list.md with your task queue."
-echo "  4. Run: ./harness.sh"
-
-
+echo "✅ Pipeline successfully installed / updated!"
+echo "💡 To test harness offline (0 token): ${TARGET_DIR}/pipeline/scripts/selftest.sh"
+echo "💡 To run autonomous loop: ${TARGET_DIR}/harness.sh"

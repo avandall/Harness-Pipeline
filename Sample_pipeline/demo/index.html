@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="migrate-csrf" content="__MIGRATE_CSRF_TOKEN__">
+<title>Shopify Migrate — control panel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Ccircle cx='12' cy='12' r='10' stroke='%230061FF' stroke-width='2.4'/%3E%3Cellipse cx='12' cy='12' rx='4.4' ry='10' stroke='%230061FF' stroke-width='1.6'/%3E%3Cline x1='2' y1='12' x2='22' y2='12' stroke='%230061FF' stroke-width='1.6'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Poiret+One&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;font-family:Inter,system-ui,sans-serif;color:#00142D;background:#F4F7FF}
+  ::selection{background:#bcd2ff}
+  body{min-height:100vh}
+  @keyframes drift1{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-16px) rotate(-3deg)}}
+  @keyframes drift2{0%,100%{transform:translateY(0) rotate(6deg)}50%{transform:translateY(-20px) rotate(4deg)}}
+  @keyframes drift3{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-13px) rotate(-6deg)}}
+  @keyframes screenIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(22,179,100,.5)}100%{box-shadow:0 0 0 7px rgba(22,179,100,0)}}
+  @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+  /* ---- logo (colored by parent via currentColor) ---- */
+  .logo{display:inline-flex;align-items:center;font:800 1.35em/1 Inter;letter-spacing:-.02em}
+  .logo svg{width:.95em;height:.95em;margin:0 -1px}
+  .logo .l{font-weight:400}
+  .div{width:1px;height:16px;background:currentColor;opacity:.4;margin:0 11px}
+  .sub{font:500 .82em/1 Inter;opacity:.9}
+
+  /* ---- buttons ---- */
+  .btn{display:inline-flex;align-items:center;gap:8px;border:none;font:600 15px Inter;border-radius:999px;padding:12px 22px;cursor:pointer;transition:transform .12s,box-shadow .12s,opacity .12s;white-space:nowrap}
+  .btn:hover:not([disabled]){transform:translateY(-1px)}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn-dark{background:#00142D;color:#fff;box-shadow:0 10px 26px rgba(0,20,45,.22)}
+  .btn-blue{background:#0061FF;color:#fff;box-shadow:0 10px 24px rgba(0,97,255,.28)}
+  .btn-ghost{background:#fff;color:#354253;border:1px solid #D6E0F2}
+  .btn-sm{padding:9px 15px;font-size:13px}
+  .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+
+  /* ===================== HERO ===================== */
+  body[data-view="work"] #hero{display:none}
+  body[data-view="hero"] #work{display:none}
+  #hero{position:relative;min-height:100vh;overflow:hidden;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#0061FF 0%,#3D7BFF 42%,#EAF1FF 80%,#F4F7FF 100%);color:#fff}
+  #hero .sun{position:absolute;inset:0;pointer-events:none;background:repeating-conic-gradient(from 0deg at 50% -8%,rgba(255,255,255,.13) 0deg .22deg,transparent .22deg 3.4deg);-webkit-mask-image:radial-gradient(120% 80% at 50% -8%,#000 0%,transparent 62%);mask-image:radial-gradient(120% 80% at 50% -8%,#000 0%,transparent 62%);opacity:.9}
+  #hero nav{position:relative;z-index:3;display:flex;align-items:center;padding:22px 40px;font-size:23px}
+  #hero .body{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px 48px}
+  .beta{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);backdrop-filter:blur(6px);border-radius:999px;padding:7px 16px;font:600 13px Inter;margin-bottom:24px}
+  .beta .g{width:7px;height:7px;border-radius:50%;background:#16B364;box-shadow:0 0 0 4px rgba(22,179,100,.3)}
+  #hero h1{margin:0;font:800 54px/1.05 Inter;letter-spacing:-.03em;max-width:860px;text-wrap:balance}
+  #hero h1 .accent{color:#BFE8D2}
+  #hero .lede{margin:18px 0 0;font:400 18px/1.5 Inter;color:rgba(255,255,255,.92);max-width:600px}
+  .controls{margin-top:30px;width:100%;max-width:920px;display:flex;flex-direction:column;gap:12px;align-items:center}
+  .seg{display:inline-flex;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:4px;gap:2px}
+  .seg button{border:none;background:transparent;color:#fff;font:600 13px Inter;border-radius:999px;padding:8px 16px;cursor:pointer;opacity:.85}
+  .seg button.on{background:#fff;color:#0061FF;opacity:1}
+  .runopts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .runopt{display:flex;align-items:center;gap:8px;background:rgba(0,20,45,.28);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:5px 7px 5px 13px;font:700 12px Inter;color:#fff}
+  .runopt select{appearance:none;border:none;outline:none;border-radius:999px;background:#fff;color:#0061FF;padding:8px 27px 8px 11px;font:700 12px Inter;cursor:pointer;max-width:220px;background-image:linear-gradient(45deg,transparent 50%,#0061FF 50%),linear-gradient(135deg,#0061FF 50%,transparent 50%);background-position:calc(100% - 13px) 50%,calc(100% - 9px) 50%;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+  .runopt select:focus-visible,.runopt input:focus-visible{box-shadow:0 0 0 3px rgba(0,20,45,.28)}
+  .runopt input{border:none;outline:none;border-radius:999px;background:#fff;color:#0061FF;padding:8px 11px;width:150px;font:700 12px Inter}
+  .runopt.has-custom #model{max-width:92px}.runopt.has-custom #modelCustom{width:132px}
+  .autorun{position:relative;display:flex;align-items:center;gap:8px;min-height:44px;background:rgba(0,20,45,.28);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:7px 13px 7px 9px;font:700 12px Inter;color:#fff;cursor:pointer}
+  .autorun input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:2}
+  .switch{position:relative;width:34px;height:20px;border-radius:999px;background:rgba(0,20,45,.3);box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);transition:background .18s}
+  .switch::after{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,20,45,.25);transition:transform .18s}
+  .autorun input:checked+.switch{background:#16B364}
+  .autorun input:checked+.switch::after{transform:translateX(14px)}
+  .autorun input:focus-visible+.switch{box-shadow:0 0 0 3px rgba(255,255,255,.55)}
+  .pill{width:100%;display:flex;gap:10px;background:#fff;border-radius:999px;padding:9px 9px 9px 22px;box-shadow:0 30px 70px rgba(0,25,70,.32);align-items:center}
+  .pill input{flex:1;border:none;outline:none;font:500 17px Inter;color:#00142D;background:transparent;min-width:0}
+  .pill.hide{display:none}
+  .refnote{width:100%;display:flex;flex-direction:column;gap:12px;font:500 14px Inter}
+  .dropzone{width:100%;border:2px dashed rgba(255,255,255,.55);border-radius:16px;padding:24px 20px;text-align:center;color:#fff;background:rgba(255,255,255,.08);transition:.15s;cursor:pointer}
+  .dropzone.over{border-color:#fff;background:rgba(255,255,255,.22)}
+  .dropzone b{display:block;font:700 15px Inter;margin-bottom:3px}
+  .dropzone .hint{font:500 12.5px Inter;opacity:.85}
+  .dropzone .st{display:block;margin-top:10px;font:700 12.5px Inter;color:#BFE8D2;min-height:16px}
+  .refnote.hide{display:none}
+  .hero-2nd{display:flex;gap:12px;align-items:center;margin-top:4px;min-height:22px}
+  .hero-2nd a{color:#fff;font:600 13px Inter;opacity:.9;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .floats{position:absolute;inset:0;z-index:1;pointer-events:none}
+  .fcard{position:absolute;width:150px;background:#fff;border-radius:16px;box-shadow:0 24px 50px rgba(0,30,80,.22);overflow:hidden;border:1px solid rgba(255,255,255,.7)}
+  .fcard .bar{display:flex;gap:5px;padding:9px 11px;background:#F4F7FF}
+  .tl{width:7px;height:7px;border-radius:50%}
+  .tl.r{background:#ff5f57}.tl.y{background:#febc2e}.tl.g{background:#28c840}
+  .fcard .in{padding:12px;font:500 10.5px/1.7 'SF Mono',ui-monospace,monospace;color:#5b6b8c}
+  @media(max-width:820px){.floats{display:none}#hero h1{font-size:38px}}
+  @media(max-width:480px){#hero nav{padding:20px 24px;font-size:20px}#hero nav .navlink{white-space:nowrap}.runopt select{max-width:210px}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+  /* setup drawer (shared) */
+  details.setup{width:100%;max-width:700px}
+  details.setup>summary{cursor:pointer;font:700 13px Inter;list-style:none;display:inline-flex;align-items:center;gap:6px}
+  details.setup>summary::-webkit-details-marker{display:none}
+  .setup .card{margin-top:12px;background:#fff;color:#354253;border:1px solid #E6ECF7;border-radius:14px;padding:16px 18px;text-align:left;box-shadow:0 16px 40px rgba(0,30,80,.14)}
+  .step{display:flex;gap:11px;align-items:flex-start;font:500 13px/1.55 Inter;margin:7px 0}
+  .num{flex:none;width:20px;height:20px;border-radius:50%;background:#EEF3FF;color:#0061FF;font:800 11px Inter;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  code,.k{font:600 12.5px 'SF Mono',ui-monospace,Menlo,monospace;background:#F4F7FF;border:1px solid #E1E9F7;border-radius:6px;padding:1px 6px;color:#0061FF}
+
+  /* ===================== WORK ===================== */
+  #work{min-height:100vh;display:flex;flex-direction:column;background:linear-gradient(180deg,#EEF3FF,#F7F9FF 30%,#FBFCFF)}
+  .chrome{display:flex;align-items:center;gap:16px;padding:16px 30px;border-bottom:1px solid #E6ECF7;background:rgba(255,255,255,.75);backdrop-filter:blur(8px);position:sticky;top:0;z-index:10;font-size:19px;color:#00142D}
+  .chrome .status{display:inline-flex;align-items:center;gap:7px;font:600 13px Inter;color:#6B7A90;background:#EEF2FA;border-radius:999px;padding:6px 13px}
+  .chrome .status .d{width:7px;height:7px;border-radius:50%;background:#9AA7BD}
+  .chrome .status.run .d{background:#16B364;animation:pulse 1.2s ease-out infinite}
+  .chrome .config{font:700 11px Inter;color:#0061FF;background:#EEF3FF;border-radius:999px;padding:6px 10px;white-space:nowrap}
+  .chrome .sp{flex:1}
+  .wrap{max-width:1120px;margin:0 auto;width:100%;padding:24px 30px 60px}
+  @media(max-width:900px){
+    .chrome{position:static;flex-wrap:wrap;gap:8px 10px;padding:12px 16px}
+    .chrome .config{flex:1 0 100%;min-width:0;overflow:hidden;text-overflow:ellipsis}
+    .chrome .sp{display:none}
+  }
+
+  /* blocked card */
+  .blocked{background:#fff;border:1px solid #FFE0B8;border-left:5px solid #FF9F45;border-radius:16px;box-shadow:0 16px 40px rgba(0,20,45,.1);padding:18px 22px;margin-bottom:22px;animation:screenIn .4s ease both}
+  .blocked h3{margin:0;font:800 17px Inter;color:#00142D;display:flex;align-items:center;gap:9px}
+  .blocked .warn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:#FFF3E4;flex:none}
+  .blocked pre{margin:13px 0 0;background:#FFF9F0;border:1px solid #FFE9CF;border-radius:11px;padding:14px 16px;font:500 12.5px/1.65 'SF Mono',ui-monospace,monospace;color:#5C4A32;white-space:pre-wrap;max-height:260px;overflow:auto}
+  .blocked .act{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .btn-fix{background:#0061FF;color:#fff;box-shadow:0 8px 20px rgba(0,97,255,.24)}
+
+  .whead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:10px}
+  .whead h2{margin:0;font:800 25px Inter;letter-spacing:-.02em}
+  .whead .sub2{font:500 14px Inter;color:#6B7A90;margin-top:3px}
+  .pctbig{font:800 30px Inter;color:#0061FF;letter-spacing:-.02em}
+  .pbar{height:9px;border-radius:999px;background:#E3EAF6;overflow:hidden;margin-bottom:22px}
+  .pbar>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#0061FF,#3D7BFF);transition:width .4s}
+
+  .cols{display:grid;grid-template-columns:250px 1fr;gap:26px;align-items:start}
+  @media(max-width:780px){.cols{grid-template-columns:1fr}}
+  .track{display:flex;flex-direction:column;gap:8px}
+  .trow{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid #E6ECF7;border-radius:12px;padding:11px 13px}
+  .trow .dot{width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:800 10px Inter}
+  .trow .nm{font:700 12.5px Inter;letter-spacing:.02em}
+
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+  .tile{background:#fff;border:1px solid #E6ECF7;border-radius:14px;padding:15px 16px;box-shadow:0 8px 22px rgba(0,30,80,.05)}
+  .tile .h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .tile .name{font:700 15px Inter}
+  .tick{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
+  .tile .st{margin-top:11px;font:700 11px Inter;letter-spacing:.04em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px}
+  .tile .bar{height:6px;border-radius:999px;background:#E3EAF6;overflow:hidden;margin-top:11px}
+  .tile .bar>i{display:block;height:100%;border-radius:999px;transition:width .3s}
+  .empty{grid-column:1/-1;text-align:center;color:#9AA7BD;font:500 14px Inter;padding:30px;border:1px dashed #D6E0F2;border-radius:14px;background:#fff}
+
+  .followup{margin-top:22px;background:#fff;border:1px solid #D6E0F2;border-radius:16px;padding:20px 22px;box-shadow:0 12px 32px rgba(0,30,80,.07);transition:border-color .2s,box-shadow .2s}
+  .followup.ready{border-color:#A8DFC2;box-shadow:0 14px 36px rgba(22,179,100,.1)}
+  .followup-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:15px}
+  .followup-icon{width:38px;height:38px;border-radius:11px;background:#EEF3FF;color:#0061FF;display:flex;align-items:center;justify-content:center;flex:none}
+  .followup.ready .followup-icon{background:#E6F7EE;color:#0C8A4B}
+  .followup-copy{min-width:0;flex:1}
+  .followup-copy h3{margin:0;font:800 18px/1.25 Inter;letter-spacing:-.01em}
+  .followup-copy p{margin:4px 0 0;color:#6B7A90;font:500 13px/1.5 Inter}
+  .followup-state{flex:none;border-radius:999px;padding:6px 10px;background:#EEF2FA;color:#6B7A90;font:800 10px Inter;letter-spacing:.05em;text-transform:uppercase}
+  .followup.ready .followup-state{background:#E6F7EE;color:#0C8A4B}
+  .followup label{display:block;margin-bottom:7px;font:700 13px Inter;color:#00142D}
+  .followup textarea{display:block;width:100%;min-height:112px;resize:vertical;border:1px solid #C8D5E9;border-radius:12px;padding:13px 14px;background:#FBFCFF;color:#00142D;font:500 15px/1.55 Inter;outline:none;transition:border-color .18s,box-shadow .18s}
+  .followup textarea::placeholder{color:#8C9AAF}
+  .followup textarea:focus-visible{border-color:#0061FF;box-shadow:0 0 0 3px rgba(0,97,255,.14)}
+  .followup textarea:disabled{opacity:.65;cursor:not-allowed}
+  .followup-actions{display:flex;align-items:center;gap:12px;margin-top:10px}
+  .followup-help{flex:1;color:#6B7A90;font:500 12.5px/1.5 Inter}
+  .followup-count{font:600 11px 'SF Mono',ui-monospace,monospace;color:#8C9AAF;white-space:nowrap}
+  .followup .btn{min-height:44px}
+  @media(max-width:560px){.wrap{padding:20px 16px 48px}.followup{padding:17px}.followup-head{display:grid;grid-template-columns:38px minmax(0,1fr) auto}.followup-copy{display:contents}.followup-copy h3{grid-column:2;align-self:center}.followup-copy p{grid-column:1/-1;grid-row:2;margin-top:8px}.followup-state{grid-column:3;grid-row:1;align-self:center}.followup-actions{align-items:stretch;flex-direction:column}.followup-actions .btn{justify-content:center;width:100%}.followup-count{align-self:flex-end}}
+
+  .logwrap{margin-top:22px;background:#0A1730;border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(0,20,60,.18)}
+  .logbar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #16223f}
+  .logbar .t{margin-left:8px;font:600 12px Inter;color:#7FB0FF}
+  .logbar .live{margin-left:auto;font:700 10px Inter;letter-spacing:.08em;color:#16B364;display:none}
+  .logbar .live.on{display:inline-flex;align-items:center;gap:6px}
+  .logbar .live .p{width:6px;height:6px;border-radius:50%;background:#16B364;animation:pulse 1.2s ease-out infinite}
+  pre.log{margin:0;max-height:340px;overflow:auto;padding:15px 17px;font:500 12.5px/1.75 'SF Mono',ui-monospace,Menlo,monospace;color:#9FC2FF;white-space:pre-wrap;word-break:break-word}
+
+  /* modal (guide / learnings / setup) */
+  .modal{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(6,18,40,.5);backdrop-filter:blur(4px)}
+  .modal.hide{display:none}
+  .sheet{background:#fff;border-radius:20px;box-shadow:0 40px 100px rgba(0,10,40,.4);width:100%;max-width:720px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;animation:screenIn .3s ease both;color:#00142D}
+  .mhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 24px;border-bottom:1px solid #EEF2FA}
+  .mhead h3{margin:0;font:800 19px Inter;letter-spacing:-.01em}
+  .mhead button{border:none;background:#F4F7FF;width:32px;height:32px;border-radius:9px;cursor:pointer;font:600 15px Inter;color:#6B7A90}
+  .mbody{padding:20px 24px;overflow:auto;font:400 14px/1.65 Inter;color:#354253}
+  .mbody h4{margin:20px 0 8px;font:800 14px Inter;color:#00142D}
+  .mbody h4:first-child{margin-top:0}
+  .mbody ol{margin:0;padding-left:22px}.mbody ol li{margin:7px 0}
+  .mbody p{margin:8px 0}
+  .mbody pre{background:#0A1730;color:#9FC2FF;border-radius:12px;padding:14px 16px;font:500 12px/1.7 'SF Mono',ui-monospace,monospace;white-space:pre-wrap;overflow:auto;max-height:52vh}
+  .warnbox{background:#FFF9F0;border:1px solid #FFE0B8;border-left:4px solid #FF9F45;border-radius:12px;padding:13px 16px;font:500 13px/1.6 Inter;color:#7A5C33;margin-bottom:16px}
+  .schip{display:inline-block;font:800 10px Inter;letter-spacing:.03em;border-radius:5px;padding:2px 6px;color:#fff;margin-right:3px}
+  #hero nav .navlink{font:600 13px Inter;opacity:.92}
+  #hero nav .navlink,.setuplink{color:#fff;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .setuplink{font:700 13px Inter;opacity:.95}
+</style>
+</head>
+<body data-view="hero">
+
+  <!-- ============ HERO ============ -->
+  <section id="hero">
+    <div class="sun"></div>
+    <div class="floats">
+      <div class="fcard" style="left:3%;top:16%;animation:drift1 7s ease-in-out infinite"><div class="bar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div><div class="in" style="color:#0061FF">▸ plan.sh<br>◦ crawl → queue<br>◦ CAPTURE ×7</div></div>
+      <div class="fcard" style="right:3%;top:20%;animation:drift2 8.5s ease-in-out infinite"><div class="bar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div><div class="in">home&nbsp;&nbsp;✓ DONE<br>about ▸ GATE<br>faq&nbsp;&nbsp;&nbsp;· BUILD</div></div>
+      <div class="fcard" style="left:5%;bottom:12%;width:140px;animation:drift3 7.8s ease-in-out infinite"><div class="bar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div><div class="in">🔧 Bash<br>🔧 navigate<br>✓ agent done</div></div>
+    </div>
+
+    <nav><span class="logo" id="heroLogo">SH<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.4"/><ellipse cx="12" cy="12" rx="4.4" ry="10" stroke="currentColor" stroke-width="1.6"/><line x1="2" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="1.6"/></svg>P<span class="l">LINE</span></span><span class="div"></span><span class="sub">Migrate</span><span style="flex:1"></span><a class="navlink" id="heroGuide">How it works</a></nav>
+
+    <div class="body">
+      <span class="beta"><span class="g"></span>Local control panel · runs your CLI</span>
+      <h1>Migrate any store to Shopify.<br><span class="accent">plan it, then run it.</span></h1>
+      <p class="lede">Point it at a live URL or a local design build — then use the resumable loop or migrate the full plan in one go.</p>
+
+      <div class="controls">
+        <div class="seg" id="mode">
+          <button data-mode="site" class="on">Full site (URL)</button>
+          <button data-mode="reference">Local reference build</button>
+        </div>
+        <div class="runopts">
+          <label class="runopt">Provider
+            <select id="provider" aria-label="Agent provider"></select>
+          </label>
+          <label class="runopt" id="modelControl">Model
+            <select id="model" aria-label="Agent model"></select>
+            <input id="modelCustom" aria-label="Custom model ID" maxlength="128" placeholder="model ID" hidden>
+          </label>
+          <label class="runopt">Effort
+            <select id="effort" aria-label="Reasoning effort"></select>
+          </label>
+          <label class="runopt">Execute
+            <select id="execution" aria-label="Execution mode">
+              <option value="loop">Loop · resumable</option>
+              <option value="one-go">One go · full queue</option>
+            </select>
+          </label>
+          <label class="autorun">
+            <input id="autoExecute" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+            <span>Auto-execute after Plan</span>
+          </label>
+        </div>
+        <form class="pill" id="planForm">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="flex:none"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="#0061FF" stroke-width="2" stroke-linecap="round"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="#0061FF" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="url" placeholder="https://source-site.com" spellcheck="false" autocomplete="off">
+          <button type="submit" class="btn btn-dark" id="heroPlan">▸ Plan my store</button>
+        </form>
+        <div class="refnote hide" id="refNote">
+          <div id="dropzone" class="dropzone">
+            <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" style="margin-bottom:6px"><path d="M12 16V4m0 0 4 4m-4-4-4 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+            <b>Drag a design folder here — or click to choose one</b>
+            <span class="hint">the whole build — HTML, CSS, JS &amp; subfolders — is copied into <code class="k">reference/&lt;name&gt;/</code></span>
+            <span class="st" id="dropStatus"></span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px">
+            <label class="runopt">Build
+              <select id="refBuild" aria-label="Reference build"><option value="">Choose a build</option></select>
+            </label>
+            <span class="hint" id="refReady" style="color:#fff;opacity:.9"></span>
+            <button class="btn btn-dark btn-sm" id="heroPlanRef" disabled>▸ Plan reference</button>
+          </div>
+        </div>
+        <div class="hero-2nd" id="hero2nd"></div>
+        <a class="setuplink" id="heroSetup">▸ First-time setup (store · app · env)</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WORK ============ -->
+  <section id="work">
+    <div class="chrome">
+      <span class="logo" style="color:#00142D">SH<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.4"/><ellipse cx="12" cy="12" rx="4.4" ry="10" stroke="currentColor" stroke-width="1.6"/><line x1="2" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="1.6"/></svg>P<span class="l">LINE</span></span><span class="div" style="color:#00142D"></span><span class="sub" style="color:#0061FF">Migrate</span>
+      <span class="status" id="statusChip"><span class="d"></span><span id="statusText">idle</span></span>
+      <span class="config" id="runConfig">Claude · loop</span>
+      <button class="btn btn-ghost btn-sm" id="wGuide">❔ How it works</button>
+      <button class="btn btn-ghost btn-sm" id="wLearn">📄 Learnings</button>
+      <span class="sp"></span>
+      <button class="btn btn-blue btn-sm" id="wPlan">▸ Plan</button>
+      <button class="btn btn-dark btn-sm" id="wExec">⚙ Execute</button>
+      <button class="btn btn-ghost btn-sm" id="wStop" disabled>■ Stop</button>
+      <button class="btn btn-ghost btn-sm" id="wReset" title="back to start">↺</button>
+    </div>
+
+    <div class="wrap">
+      <div id="blockedBox"></div>
+
+      <div class="whead">
+        <div><h2 id="wTitle">Pages</h2><div class="sub2" id="wSub">Run Plan to build the evidence packs.</div></div>
+        <div style="text-align:right"><span class="pctbig" id="wPct">0%</span></div>
+      </div>
+      <div class="pbar"><i id="wProg" style="width:0%"></i></div>
+
+      <div class="cols">
+        <div class="track" id="track"></div>
+        <div class="tiles" id="tiles"></div>
+      </div>
+
+      <section class="followup" id="followUpCard" aria-labelledby="followUpTitle">
+        <div class="followup-head">
+          <span class="followup-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12M7.76 16.24l-2.12 2.12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg></span>
+          <div class="followup-copy"><h3 id="followUpTitle">Follow-up tweaks</h3><p>After every page is DONE, send one more implementation request using the selected provider, model, and effort.</p></div>
+          <span class="followup-state" id="followUpState">Locked</span>
+        </div>
+        <form id="followUpForm">
+          <label for="followUpPrompt">What should be changed?</label>
+          <textarea id="followUpPrompt" maxlength="16000" aria-describedby="followUpHelp followUpCount" placeholder="Example: tighten the mobile header spacing and verify it across every page." autocomplete="off"></textarea>
+          <div class="followup-actions">
+            <span class="followup-help" id="followUpHelp" aria-live="polite">Unlocks after the full migration is gate-verified.</span>
+            <span class="followup-count" id="followUpCount">0 / 16,000</span>
+            <button type="submit" class="btn btn-blue btn-sm" id="followUpButton" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="followUpButtonText">Apply follow-up</span></button>
+          </div>
+        </form>
+      </section>
+
+      <div class="logwrap">
+        <div class="logbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="t" id="logTitle">terminal</span><span class="live" id="live"><span class="p"></span>RUNNING</span></div>
+        <pre class="log" id="log">Waiting for a run… click Plan.</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- shared modal: guide / learnings / setup (body-level so it works in both views) -->
+  <div id="modal" class="modal hide"><div class="sheet"><div class="mhead"><h3 id="mTitle"></h3><button id="mClose" title="close">✕</button></div><div class="mbody" id="mBody"></div></div></div>
+
+<script>
+const STAGES=['CAPTURE','BUILD','CONVERGE','INTERACTIONS','GATE','VISUAL-VERIFY','DONE'];
+const COL={CAPTURE:'#7A5CFF',BUILD:'#0061FF',CONVERGE:'#F08A24',INTERACTIONS:'#0EA5B7',GATE:'#3D7BFF','VISUAL-VERIFY':'#16B364',DONE:'#16B364'};
+const AGENT_PROFILES=__MIGRATE_AGENT_PROFILES__;
+const CUSTOM_MODEL='__custom__';
+const $=id=>document.getElementById(id);
+const tint=(h,a)=>{const n=parseInt(h.slice(1),16);return`rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+const csrf=document.querySelector('meta[name="migrate-csrf"]').content;
+let mode='site',provider=localStorage.getItem('migrate-provider')||'claude',model='',effort='',execution=localStorage.getItem('migrate-execution')||'loop',logNext=0,atBottom=true,rawLog='',lastBlocked=null,startedWork=false,lastStatus=null;
+let autoExecute=localStorage.getItem('migrate-auto-execute')==='1';
+let autoExecutePending=sessionStorage.getItem('migrate-auto-execute-pending')==='1';
+let autoExecuteSawPlan=sessionStorage.getItem('migrate-auto-execute-saw-plan')==='1',autoExecuteStarting=false;
+if(!AGENT_PROFILES.some(p=>p.id===provider))provider='claude';
+if(!['loop','one-go'].includes(execution))execution='loop';
+
+// ANSI → coloured terminal
+const ANSI={30:'#5b6b8c',31:'#FF7B72',32:'#4ADE80',33:'#FFC24B',34:'#6EA8FF',35:'#C7A0FF',36:'#5CC8FF',37:'#DCE8FF',90:'#7089B0',91:'#FF7B72',92:'#4ADE80',93:'#FFC24B',94:'#6EA8FF',95:'#C7A0FF',96:'#5CC8FF',97:'#fff'};
+function ansiToHtml(s){s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const parts=s.split(/\x1b\[([0-9;]*)m/);let out='',cur={},open=false;const close=()=>{if(open){out+='</span>';open=false}};const openS=()=>{let st='';if(cur.fg)st+='color:'+cur.fg+';';if(cur.dim)st+='opacity:.6;';if(cur.bold)st+='font-weight:700;';if(st){out+='<span style="'+st+'">';open=true}};for(let i=0;i<parts.length;i++){if(i%2===0){out+=parts[i];continue}close();let c=parts[i].split(';').filter(x=>x!=='').map(Number);if(!c.length)c=[0];for(const x of c){if(x===0)cur={};else if(x===1)cur.bold=true;else if(x===2)cur.dim=true;else if(x===22){cur.bold=false;cur.dim=false}else if(x===39)delete cur.fg;else if(ANSI[x]!==undefined)cur.fg=ANSI[x]}openS()}close();return out}
+
+// ---- modal content + system (guide / learnings / setup) ----
+const SETUP_HTML=[
+ ['1','<b>Install &amp; deps</b> — <code>bun install</code> · <code>bunx playwright install chromium</code> · <code>npm i -g @shopify/cli</code>'],
+ ['2','<b>Have a Shopify store</b> (a dev/test store is fine) → <code class="k">SHOPIFY_STORE</code>, <code class="k">STOREFRONT_PASSWORD</code> in <code class="k">.env</code>'],
+ ['3','<b>Admin API access</b> (for page/blog/menu/redirect records) — an app in the Dev Dashboard with <code class="k">write_content</code>, <code class="k">write_online_store_pages</code>, <code class="k">write_online_store_navigation</code>, <code class="k">write_themes</code> → <code class="k">SHOPIFY_CLIENT_ID</code> + <code class="k">SHOPIFY_CLIENT_SECRET</code> (the harness mints the 24h token itself)'],
+ ['4','<b>Authorise the CLI</b> — <code>shopify auth login</code> → <code>shopify theme list --store $SHOPIFY_STORE</code> → use an <b>unpublished</b> theme id (or create one: <code>shopify theme push --unpublished --path theme</code>) → <code class="k">SHOPIFY_THEME_ID</code>'],
+ ['5','<b>Launch</b> — <code>bun dev</code> (this panel). The selected <code>claude</code>/<code>codex</code> CLI must be logged in; custom adapters require <code class="k">AGENT_BIN</code>.'],
+].map(([n,t])=>`<div class="step"><span class="num">${n}</span><div>${t}</div></div>`).join('');
+
+const GUIDE_HTML=`
+<h4>What is this?</h4>
+<p>This little app copies an online store from another website and rebuilds it on Shopify so it looks the same. You give it a web address (or a design folder), choose the provider, model, effort, and execution mode, then watch it work.</p>
+<h4>How to use it</h4>
+<ol>
+<li><b>Set up once.</b> Open <b>First-time setup</b> and follow the 5 steps (make a store, make an app, fill in the <code>.env</code> file, log in). You only do this one time.</li>
+<li><b>Give it a source.</b> Paste the website address, or switch to <b>Local reference build</b> and drag a design folder onto the box.</li>
+<li><b>Choose how to execute.</b> Pick the provider, model, and effort. Plan always keeps the same page-by-page capture flow. For Execute, <b>Loop</b> starts a fresh agent turn per page; <b>One go</b> uses one agent turn for the full validated queue. Turn on <b>Auto-execute after Plan</b> to start Execute as soon as every planned page validates.</li>
+<li><b>Click Plan.</b> It studies the source and writes notes for every page. Wait until the button says <b>✓ Planned</b>.</li>
+<li><b>Click Execute.</b> It builds each page on Shopify and checks it. You can click <b>Stop</b> at any time.</li>
+<li><b>Request a follow-up.</b> Once every page is DONE, use <b>Follow-up tweaks</b> for corrections or refinements. It loads the full project and migration context, implements the request, re-tests and re-gates affected pages, then commits and pushes.</li>
+</ol>
+<h4>Phase 1 — Plan <span style="color:#9AA7BD;font-weight:500">(it studies the source; it writes no store code yet)</span></h4>
+<ol>
+<li><b>Open the source.</b> It opens the real website in a browser and looks at it closely, on desktop and phone.</li>
+<li><b>Find the pages.</b> It reads the menu, the footer, and the sitemap to list every page, and saves that list (the "queue").</li>
+<li><b>Map each page.</b> For every page it writes down the sections (hero, text, footer…) and exactly where each one sits (the "contract").</li>
+<li><b>Copy the files.</b> It downloads every image, font, and video exactly — byte for byte — so nothing is a look-alike.</li>
+<li><b>List the moving parts.</b> Pop-ups, drop-down menus, sliders, videos, and forms are all written down so none are missed.</li>
+<li><b>Measure everything.</b> It records the exact size, spacing, and colors of each section, on desktop and phone.</li>
+<li><b>Save the notes.</b> All of this becomes an "evidence pack" for each page. When every page has a full pack, planning is <b>complete</b> — the app tells you, so you know it was not cut off half-way.</li>
+</ol>
+<h4>Phase 2 — Execute <span style="color:#9AA7BD;font-weight:500">(it builds and checks each page)</span></h4>
+<ol>
+<li><span class="schip" style="background:#0061FF">BUILD</span> It builds the whole page on Shopify using reusable sections and the exact copied files, then puts it on the preview (not live).</li>
+<li><span class="schip" style="background:#F08A24">CONVERGE</span> It compares its copy to the real page and fixes every difference until there are none — on desktop and phone.</li>
+<li><span class="schip" style="background:#0EA5B7">INTERACTIONS</span> It rebuilds the moving parts (menus, pop-ups, videos, forms) and tests each one.</li>
+<li><span class="schip" style="background:#3D7BFF">GATE</span> It runs the final automatic check: every section matches, all tests pass, and every page and link works.</li>
+<li><span class="schip" style="background:#16B364">VISUAL-VERIFY</span> A careful human-style look at the whole page, side by side, to catch anything the automatic check might miss (a missing background, a dropped link, the wrong picture).</li>
+<li><span class="schip" style="background:#16B364">DONE</span> The page is finished and the app moves on to the next one.</li>
+</ol>
+<h4>Two special things</h4>
+<p><b>Blocked.</b> Sometimes the app needs you — for example a one-time login to create a page. When that happens it stops and shows a <b>Blocked</b> card that tells you exactly what to do. After you fix it, click <b>“clear &amp; continue”</b> and it keeps going.</p>
+<p><b>Learnings.</b> While it works, the app writes down useful things it learned in <code>LEARNINGS.md</code>. After a run, click <b>Learnings</b> to read them — and be careful: only change the harness if you are sure; when in doubt, leave the note in the file.</p>`;
+
+const modal=$('modal');
+function openModal(t,h){$('mTitle').textContent=t;$('mBody').innerHTML=h;$('mBody').scrollTop=0;modal.classList.remove('hide')}
+function closeModal(){modal.classList.add('hide')}
+$('mClose').onclick=closeModal;
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+$('heroSetup').onclick=()=>openModal('First-time setup',SETUP_HTML);
+$('heroGuide').onclick=$('wGuide').onclick=()=>openModal('How it works',GUIDE_HTML);
+const LWARN=`<div class="warnbox"><b>⚠ Read carefully before you change anything.</b> These are notes the run wrote down. Be careful editing the harness — the files under <code>docs/</code>, <code>prompts/</code>, and <code>AGENT_GUIDE.md</code> — because a wrong edit can break future migrations. Only fold a note into the flow if you are sure it is right. If you are not sure, delete the note or just leave it here in <code>LEARNINGS.md</code> for later — keeping it here is much safer than editing the harness files.</div>`;
+$('wLearn').onclick=async()=>{
+  openModal('Learnings — read carefully',LWARN+'<p style="color:#9AA7BD">loading LEARNINGS.md…</p>');
+  let c=null;try{c=(await fetch('/api/learnings').then(r=>r.json())).content}catch(e){}
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  openModal('Learnings — read carefully',LWARN+(c&&c.trim()?`<pre>${esc(c)}</pre>`:'<p style="color:#9AA7BD">No <code>LEARNINGS.md</code> notes yet — this fills up as the migration runs.</p>'));
+};
+
+// mode toggle
+$('mode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.mode;[...$('mode').children].forEach(c=>c.classList.toggle('on',c===b));$('planForm').classList.toggle('hide',mode!=='site');$('refNote').classList.toggle('hide',mode==='site')});
+const profile=()=>AGENT_PROFILES.find(p=>p.id===provider);
+const effortName=value=>({none:'None',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Maximum'}[value]||value);
+function setOptions(select,items){select.replaceChildren(...items.map(item=>new Option(item.label,item.value)))}
+function renderProviderFields(){
+  const p=profile();
+  const storedModel=localStorage.getItem(`migrate-model-${provider}`)||'';
+  const storedEffort=localStorage.getItem(`migrate-effort-${provider}`)||'';
+  setOptions($('model'),[{value:'',label:p.defaultModelLabel},...p.models,{value:CUSTOM_MODEL,label:'Other…'}]);
+  const known=p.models.some(item=>item.value===storedModel);
+  $('modelCustom').value=storedModel&&!known?storedModel:'';
+  $('model').value=storedModel&&!known?CUSTOM_MODEL:storedModel;
+  $('modelCustom').hidden=$('model').value!==CUSTOM_MODEL;
+  $('modelControl').classList.toggle('has-custom',!$('modelCustom').hidden);
+  setOptions($('effort'),[{value:'',label:p.defaultEffortLabel},...p.efforts.map(value=>({value,label:effortName(value)}))]);
+  $('effort').value=p.efforts.includes(storedEffort)?storedEffort:'';
+}
+function syncRunConfig(){
+  provider=$('provider').value;execution=$('execution').value;
+  model=$('model').value===CUSTOM_MODEL?$('modelCustom').value.trim():$('model').value;
+  effort=$('effort').value;autoExecute=$('autoExecute').checked;
+  localStorage.setItem('migrate-provider',provider);localStorage.setItem('migrate-execution',execution);
+  localStorage.setItem(`migrate-model-${provider}`,model);localStorage.setItem(`migrate-effort-${provider}`,effort);
+  localStorage.setItem('migrate-auto-execute',autoExecute?'1':'0');
+  const p=profile(),known=p.models.find(item=>item.value===model);
+  const modelLabel=model?(known?.short||model):'default model',effortLabel=effort||'default effort';
+  $('runConfig').textContent=`${p.label.replace(' · AGENT_BIN','')} · ${modelLabel} · ${effortLabel} · ${execution==='one-go'?'one go':'loop'}${autoExecute?' · auto':''}`;
+}
+function setAutoExecutePending(value){
+  autoExecutePending=value;autoExecuteSawPlan=false;
+  if(value)sessionStorage.setItem('migrate-auto-execute-pending','1');else sessionStorage.removeItem('migrate-auto-execute-pending');
+  sessionStorage.removeItem('migrate-auto-execute-saw-plan');
+}
+setOptions($('provider'),AGENT_PROFILES.map(p=>({value:p.id,label:p.label})));
+$('provider').value=provider;$('execution').value=execution;$('autoExecute').checked=autoExecute;renderProviderFields();syncRunConfig();
+$('provider').addEventListener('change',()=>{provider=$('provider').value;renderProviderFields();syncRunConfig()});
+$('model').addEventListener('change',()=>{$('modelCustom').hidden=$('model').value!==CUSTOM_MODEL;$('modelControl').classList.toggle('has-custom',!$('modelCustom').hidden);if(!$('modelCustom').hidden)$('modelCustom').focus();syncRunConfig()});
+$('modelCustom').addEventListener('input',syncRunConfig);$('effort').addEventListener('change',syncRunConfig);$('execution').addEventListener('change',syncRunConfig);
+$('autoExecute').addEventListener('change',()=>{if(!$('autoExecute').checked)setAutoExecutePending(false);syncRunConfig()});
+$('refBuild').addEventListener('change',()=>{$('heroPlanRef').disabled=!$('refBuild').value});
+const followUpInput=$('followUpPrompt');
+followUpInput.value=localStorage.getItem('migrate-follow-up-draft')||'';
+followUpInput.addEventListener('input',()=>{localStorage.setItem('migrate-follow-up-draft',followUpInput.value);renderFollowUp(lastStatus)});
+
+// ---- drag & drop a local reference build folder → uploads into reference/<name>/ ----
+const dz=$('dropzone');
+if(dz){
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.add('over')}));
+  dz.addEventListener('dragleave',e=>{if(e.target===dz)dz.classList.remove('over')});
+  dz.addEventListener('drop',onDrop);
+  dz.addEventListener('click',()=>$('dirInput').click());                                          // click to choose a folder
+  $('dirInput').addEventListener('change',()=>uploadFiles([...$('dirInput').files].map(f=>({relpath:f.webkitRelativePath||f.name,file:f}))));
+}
+function walk(entry,prefix,out){return new Promise(res=>{
+  if(entry.isFile){entry.file(f=>{out.push({relpath:(prefix?prefix+'/':'')+entry.name,file:f});res()},()=>res())}
+  else if(entry.isDirectory){const rd=entry.createReader(),acc=[];const read=()=>rd.readEntries(async ents=>{if(!ents.length){for(const c of acc)await walk(c,(prefix?prefix+'/':'')+entry.name,out);res()}else{acc.push(...ents);read()}},()=>res());read()}
+  else res();
+});}
+async function uploadFiles(files){   // shared by drag-drop AND click-to-choose
+  if(!files.length){$('dropStatus').textContent='no files found in that folder';return}
+  let n=0;
+  for(const f of files){
+    try{const r=await fetch('/api/upload-reference?path='+encodeURIComponent(f.relpath),{method:'POST',headers:{'X-Migrate-CSRF':csrf},body:f.file});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`)}}
+    catch(err){$('dropStatus').textContent=`upload failed: ${err.message}`;return}
+    n++;$('dropStatus').textContent=`uploading ${n}/${files.length}…`;
+  }
+  const build=(files[0].relpath.split('/')[0])||'reference';
+  $('dropStatus').textContent=`✓ ${files.length} files → reference/${build}/`;
+  const select=$('refBuild');if(![...select.options].some(o=>o.value===build))select.add(new Option(build,build));select.value=build;
+  $('heroPlanRef').disabled=false;$('refReady').textContent='ready — plan it →';
+}
+async function onDrop(e){
+  e.preventDefault();e.stopPropagation();dz.classList.remove('over');
+  const items=[...(e.dataTransfer.items||[])].map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+  if(!items.length){$('dropStatus').textContent='couldn’t read that — drop a folder';return}
+  $('dropStatus').textContent='reading folder…';
+  const files=[];for(const en of items)await walk(en,'',files);
+  uploadFiles(files);
+}
+
+async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Migrate-CSRF':csrf},body:JSON.stringify(body||{})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
+const toWork=()=>{startedWork=true;document.body.dataset.view='work'};
+
+async function doPlan(resume=false){
+  const shouldAuto=$('autoExecute').checked;setAutoExecutePending(shouldAuto);
+  try{logNext=0;rawLog='';toWork();await post('/api/plan',{source:$('url').value,mode:resume?'resume':mode,referenceBuild:$('refBuild').value,provider,model,effort});if(shouldAuto){autoExecuteSawPlan=true;sessionStorage.setItem('migrate-auto-execute-saw-plan','1')}}
+  catch(e){setAutoExecutePending(false);alert(e.message)}
+}
+async function doExec(){setAutoExecutePending(false);try{logNext=0;rawLog='';toWork();await post('/api/execute',{provider,model,effort,execution})}catch(e){alert(e.message)}}
+async function doFollowUp(){
+  const prompt=followUpInput.value.trim();if(!prompt)return;
+  $('followUpButton').disabled=true;$('followUpButtonText').textContent='Starting…';
+  try{logNext=0;rawLog='';toWork();await post('/api/follow-up',{prompt,provider,model,effort});followUpInput.value='';localStorage.removeItem('migrate-follow-up-draft');renderFollowUp(lastStatus)}
+  catch(e){alert(e.message);renderFollowUp(lastStatus)}
+}
+$('planForm').addEventListener('submit',e=>{e.preventDefault();doPlan()});
+$('heroPlanRef').onclick=()=>doPlan(false);
+$('wPlan').onclick=()=>doPlan(true);
+$('wExec').onclick=()=>{if(!$('wExec').disabled)doExec()};
+$('followUpForm').addEventListener('submit',e=>{e.preventDefault();if(!$('followUpButton').disabled)doFollowUp()});
+followUpInput.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&!$('followUpButton').disabled){e.preventDefault();doFollowUp()}});
+$('wStop').onclick=()=>{setAutoExecutePending(false);post('/api/stop',{}).catch(()=>{})};
+$('wReset').onclick=()=>{if(!$('wReset').disabled){startedWork=true;document.body.dataset.view='hero'}};  // mark takeover so the poll's auto-enter-work doesn't re-flip it back
+$('log').addEventListener('scroll',()=>{const el=$('log');atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<30});
+
+function renderBlocked(text){
+  if(text===lastBlocked)return;lastBlocked=text;const box=$('blockedBox');
+  if(!text){box.innerHTML='';return}
+  box.innerHTML=`<div class="blocked">
+    <h3><span class="warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.3 3.9 2 19a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="#F08A24" stroke-width="2" stroke-linejoin="round"/></svg></span>Blocked — needs you (<code class="k">.ralph/BLOCKED</code>)</h3>
+    <pre></pre>
+    <div class="act"><button class="btn btn-fix btn-sm" id="unblockBtn">✓ I've resolved it — clear &amp; continue</button><span style="font:500 12.5px Inter;color:#8A7A66">removes <code class="k">.ralph/BLOCKED</code> so Execute can resume</span></div>
+  </div>`;
+  box.querySelector('pre').textContent=text.trim();
+  $('unblockBtn').onclick=async()=>{$('unblockBtn').textContent='clearing…';try{await post('/api/unblock',{})}catch(e){}};
+}
+
+function renderTrack(pages){
+  const reached={};for(const p of pages){const i=STAGES.indexOf(p.stage);for(let k=0;k<=i;k++)reached[STAGES[k]]=(reached[STAGES[k]]||0)+1}
+  const total=pages.length;
+  $('track').innerHTML=STAGES.map(s=>{
+    const c=COL[s];const done=total&&reached[s]===total;const active=total&&(reached[s]||0)>0&&!done;
+    const bg=done?'#16B364':active?c:'#EEF2FA';const fg=done||active?'#fff':'#9AA7BD';
+    const mark=done?'✓':active?'●':'';
+    return`<div class="trow" style="${active?'border-color:'+tint(c,.5):''}"><span class="dot" style="background:${bg};color:${fg}">${mark}</span><span class="nm" style="color:${done||active?'#00142D':'#9AA7BD'}">${s}</span></div>`;
+  }).join('');
+}
+function renderTiles(pages){
+  const box=$('tiles');
+  if(!pages.length){box.innerHTML='<div class="empty">No pages yet — run <b>Plan</b> to build the evidence packs under <code class="k">migrations/</code>.</div>';return}
+  box.innerHTML=pages.map(p=>{const i=STAGES.indexOf(p.stage),pct=Math.round(i/(STAGES.length-1)*100),c=COL[p.stage]||'#6B7A90';
+    const tick=p.done?`<span class="tick" style="background:#E6F7EE"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="#16B364" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`:`<span class="tick" style="background:${tint(c,.15)}"><span style="width:7px;height:7px;border-radius:50%;background:${c}"></span></span>`;
+    return`<div class="tile"><div class="h"><span class="name">${p.page}</span>${tick}</div><span class="st" style="background:${tint(c,.12)};color:${c}"><span style="width:6px;height:6px;border-radius:50%;background:${c}"></span>${p.stage}</span><div class="bar"><i style="width:${pct}%;background:${p.done?'#16B364':'linear-gradient(90deg,#0061FF,#3D7BFF)'}"></i></div></div>`}).join('');
+}
+
+function renderFollowUp(s){
+  const info=s?.followUp||{ready:false,completed:0,total:0,reason:'Unlocks after the full migration is gate-verified.'};
+  const running=!!s?.running,followRunning=running&&s.kind==='follow-up',hasPrompt=!!followUpInput.value.trim();
+  const card=$('followUpCard');card.classList.toggle('ready',info.ready&&!running);
+  $('followUpState').textContent=followRunning?'Running':info.ready?'Ready':'Locked';
+  followUpInput.disabled=followRunning;
+  $('followUpButton').disabled=running||!info.ready||!hasPrompt;
+  $('followUpButtonText').textContent=followRunning?'Applying…':'Apply follow-up';
+  $('followUpCount').textContent=`${followUpInput.value.length.toLocaleString()} / 16,000`;
+  $('followUpHelp').textContent=followRunning?'The agent is implementing, testing, re-gating, committing, and pushing this request.':running?'You can keep drafting; submit unlocks when the current run finishes.':info.ready?'Ready — this runs once with the selected provider and preserves the sealed route queue.':info.reason;
+}
+
+async function tick(){
+  let s;try{s=await fetch('/api/status').then(r=>r.json())}catch(e){$('statusText').textContent='server offline — run: bun dev';return}
+  lastStatus=s;
+  const running=s.running,pages=s.pages||[],planned=pages.filter(p=>p.stage!=='CAPTURE').length,done=pages.filter(p=>p.done).length,blocked=s.blocked||null;
+  const pl=s.plan||{queued:0,validated:0,complete:false},planC=!!pl.complete;
+
+  // Auto-execute belongs to the Plan started by this tab. Seeing an old complete plan on
+  // page load is never enough to start implementation; the pending marker is armed by doPlan.
+  if(autoExecutePending&&running&&s.kind==='plan'&&!autoExecuteSawPlan){autoExecuteSawPlan=true;sessionStorage.setItem('migrate-auto-execute-saw-plan','1')}
+  if(autoExecutePending&&autoExecuteSawPlan&&!running){
+    if(planC&&!blocked&&!autoExecuteStarting){autoExecuteStarting=true;setAutoExecutePending(false);doExec().finally(()=>{autoExecuteStarting=false})}
+    else if(!planC)setAutoExecutePending(false);
+  }
+
+  // auto-enter work view only once there's real activity (a planned page, a run, or a block)
+  if(!startedWork&&(running||planned>0||blocked))document.body.dataset.view='work';
+
+  // status chip + buttons
+  const chip=$('statusChip');chip.classList.toggle('run',running);
+  const runningLabel={plan:'planning…',execute:'executing…','follow-up':'applying tweaks…'};
+  $('statusText').textContent=running?(runningLabel[s.kind]||'running…'):(blocked?'blocked':s.followUp?.ready?'complete':planC?'planned':'idle');
+  $('wStop').disabled=!running; $('wReset').disabled=running;
+  $('wPlan').disabled=running||planC; $('wPlan').textContent=planC?'✓ Planned':'▸ Plan';
+  const execOK=!running&&planC&&!blocked;
+  $('wExec').disabled=!execOK;
+  $('wExec').title=blocked?'resolve the block first':planC?'':'finish planning first';
+  $('live').classList.toggle('on',running);
+  $('logTitle').textContent=running?({plan:'plan.sh',execute:'ralph.sh','follow-up':'follow-up.sh'}[s.kind]||'terminal'):'terminal';
+
+  // hero secondary line
+  $('hero2nd').innerHTML=s.followUp?.ready?`<a id="heroFollowUp">✓ Migration complete — add follow-up tweaks →</a>`:planC&&!blocked?`<a id="heroExec">▸ Planning complete — Execute →</a>`:(blocked?'<span style="opacity:.9">Resolve the block before Execute.</span>':pl.queued&&running&&s.kind==='plan'?`<span style="opacity:.85">planning ${pl.validated}/${pl.queued}…</span>`:'');
+  const he=$('heroExec');if(he)he.onclick=doExec;
+  const hf=$('heroFollowUp');if(hf)hf.onclick=()=>{toWork();followUpInput.focus();followUpInput.scrollIntoView({behavior:'smooth',block:'center'})};
+
+  renderBlocked(blocked);
+  renderTrack(pages); renderTiles(pages); renderFollowUp(s);
+
+  // header + progress
+  $('wTitle').textContent=running&&s.kind==='plan'?'Planning…':running&&s.kind==='follow-up'?'Applying follow-up…':running?'Rebuilding on Shopify…':'Pages';
+  let planLine='';
+  if(pl.queued) planLine=planC?`planning ✓ complete (${pl.validated}/${pl.queued})`:(running&&s.kind==='plan'?`planning ${pl.validated}/${pl.queued}…`:`⚠ planning ${pl.validated}/${pl.queued} — incomplete, re-run Plan`);
+  else if(pl.validated) planLine=`planning ✓ (${pl.validated})`;
+  $('wSub').textContent=pages.length?`${pages.length} page${pages.length>1?'s':''}${planLine?' · '+planLine:''} · ${done} done`:(planLine||'Run Plan to build the evidence packs.');
+  const avg=pages.length?pages.reduce((a,p)=>a+STAGES.indexOf(p.stage),0)/pages.length/(STAGES.length-1):0;
+  const pct=Math.round(avg*100);$('wPct').textContent=pct+'%';$('wProg').style.width=pct+'%';
+
+  // log (incremental, coloured)
+  const builds=s.referenceBuilds||[],select=$('refBuild'),selected=select.value;
+  select.innerHTML='<option value="">Choose a build</option>'+builds.map(b=>`<option value="${b.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${b.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</option>`).join('');
+  if(builds.includes(selected))select.value=selected;$('heroPlanRef').disabled=!select.value;
+  if(logNext<s.logBase||logNext>s.logLen){logNext=s.logBase;rawLog=''}
+  if(s.logLen>logNext){const d=await fetch('/api/log?since='+logNext).then(r=>r.json());if(d.dropped)rawLog='';logNext=d.next;rawLog+=d.lines.join('\n')+(d.lines.length?'\n':'');if(rawLog.length>60000)rawLog=rawLog.slice(-50000);const el=$('log');el.innerHTML=ansiToHtml(rawLog);if(atBottom)el.scrollTop=el.scrollHeight}
+}
+async function poll(){await tick();setTimeout(poll,1200)}poll();
+</script>
+</body>
+</html>

@@ -51,12 +51,14 @@ def check_tool_installed(tool_name: str) -> bool:
     return shutil.which(tool_name) is not None
 
 
-def run_command(cmd: list[str]) -> tuple[int, str]:
-    """Chạy command an toàn và thu thập output."""
+def run_command(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
+    """Chạy command an toàn và thu thập output với timeout protection (default 60s)."""
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
         output = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
         return res.returncode, output.strip()
+    except subprocess.TimeoutExpired:
+        return 1, f"Execution timed out after {timeout}s: {' '.join(cmd)}"
     except (subprocess.SubprocessError, OSError) as e:
         return 1, f"Execution failed: {e!s}"
 
@@ -120,7 +122,8 @@ def run_python_checks(
             pytest_cmd = ["pytest", "--tb=short", "-q"]
             if test_target:
                 pytest_cmd.append(test_target)
-            code, out = run_command(pytest_cmd)
+            timeout_sec = 60 if test_target else 300
+            code, out = run_command(pytest_cmd, timeout=timeout_sec)
             results.append(("Python: Pytest (Runtime)", code == 0, "All unit tests passed ✓" if code == 0 else truncate_log(out)))
         else:
             results.append(("Python: Pytest (Runtime)", True, "Skipped (no python tests found)"))

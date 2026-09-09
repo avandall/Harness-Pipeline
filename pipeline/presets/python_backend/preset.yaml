@@ -9,6 +9,7 @@ static_checkers:
 
 test_runner:
   unit_tests: "pytest --tb=short -q"
+  execution_timeout_seconds: 60
 
 compactor:
   max_traceback_lines: 20

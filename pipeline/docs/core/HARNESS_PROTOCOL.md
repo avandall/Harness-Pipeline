@@ -1,259 +1,65 @@
 # HARNESS PROTOCOL
-# Giao thức Harness — Ralph Loop & Vòng lặp tự trị
+# Giao thức Harness — Ralph Loop & Vòng lặp tự trị (Next-Gen 2026)
 
-> **Trạng thái:** CORE (Fixed) | **Phiên bản:** 1.0
->
-> Đây là "hệ điều hành" của agent. Định nghĩa cách agent hoạt động như một vòng lặp tự trị thay vì một cuộc hội thoại tuyến tính.
+> **Trạng thái:** CORE (Fixed) | **Phiên bản:** 2.0 (Optimized for AGY Pro Quota)
+> **Mã thoát & Điều kiện dừng:** Xem chi tiết tại `pipeline/docs/core/EXIT_CODES.md`.
 
 ---
 
 ## 1. Ralph Loop là gì?
 
-Ralph Loop (đặt theo nhân vật Ralph Wiggum trong The Simpsons — kiên trì dù thường xuyên thất bại) là triết lý:
+> **"Mỗi iteration = một Task-Bound Session. Filesystem = bộ nhớ dài hạn. Git = lịch sử. BLOCKERS/ = phanh an toàn qua đêm."**
 
-> **"Mỗi iteration = một fresh context. Filesystem = bộ nhớ dài hạn. Git = lịch sử. BLOCKED.md = phanh khẩn cấp."**
-
-**Thay vì:**
-```
-User → [Long conversation → context rot → hallucination → wrong output]
-```
-
-**Ralph Loop làm:**
 ```
 ┌────────────────────────────────────────────────────────┐
 │  LOOP:                                                 │
-│  1. Fresh agent start                                  │
-│  2. Read filesystem state (pipeline/docs/runtime/)            │
-│  3. Execute ONE atomic unit of work                    │
-│  4. Verify output (pass/fail)                          │
-│  5. Write results & progression state to filesystem    │
-│  6. Check task completion:                             │
-│     ├── Task [x] DONE → Git commit [TASK-ID]           │
-│     └── Task IN_PROGRESS → Skip commit, keep in status │
-│  7. Check exit condition                               │
-│     ├── ALL DONE → Exit loop ✅                        │
-│     ├── BLOCKED → Create BLOCKERS/<ID>.md → Next task  │
-│     └── CONTINUE → Go to step 1 🔄                    │
+│  1. Pick next [ ] TODO task from Tasks_list.md         │
+│  2. JIT Context Injection (Task Spec + Tech + Scope)   │
+│  3. Execute atomic steps (Plan → Execute → Verify)     │
+│  4. Deterministic Verification: verify.py PASS 100%    │
+│  5. Cognitive Review: git diff check (--review-model)  │
+│  6. Auto-commit: [TASK-ID] feat/fix: description       │
+│  7. Mark [x] DONE and Flush memory for next task       │
+│  8. If stuck ≥ 2 times: [!] BLOCKED → Skip to next!    │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. State Machine
+## 2. Quản Lý Ngữ Cảnh & Bộ Nhớ (Memory Management)
 
-Mọi task đều đi qua các trạng thái sau (lưu trong `pipeline/docs/runtime/STATUS.md`):
-
-```
-INIT → PLANNING → EXECUTING → REVIEWING → COMMITTING → [IN_PROGRESS | BLOCKED | ALL_DONE]
-```
-
-| Trạng thái | Ý nghĩa | File liên quan |
-|-----------|---------|----------------|
-| `INIT` | Task mới bắt đầu, chưa có plan | runtime/PLAN.md (chưa tồn tại) |
-| `PLANNING` | AI đang viết PLAN.md | runtime/PLAN.md |
-| `EXECUTING` | AI đang thực thi step | runtime/STATUS.md, PROGRESS_LOG.md |
-| `REVIEWING` | AI đang tự review/phản biện kết quả | runtime/DEBATE_LOG.md |
-| `COMMITTING` | AI đang commit lên git | git log |
-| `IN_PROGRESS` | Dự án vẫn còn các task `[ ] TODO` hoặc `[/] IN_PROGRESS` | runtime/STATUS.md |
-| `BLOCKED` | AI bị kẹt ở task hiện tại (chuyển task ở Overnight Mode) | runtime/BLOCKERS/<TASK_ID>.md |
-| `ALL_DONE` | **TOÀN BỘ** tasks trong `Tasks_list.md` đã pass, phản biện xong và marked `[x] DONE` (hoặc `[!] BLOCKED`) | runtime/PROOF_OF_SOLUTION.md |
-
-> ⚠️ **QUY TẮC BẤT BIẾN CHO STATUS.MD:**
-> AI **CHỈ ĐƯỢC PHÉP** ghi `Phase: ALL_DONE` vào `pipeline/docs/runtime/STATUS.md` KHI VÀ CHỈ KHI tất cả các tasks trong `Tasks_list.md` đã được thực thi, phản biện, xác minh pass 100% và đánh dấu `[x] DONE` (hoặc `[!] BLOCKED`). Không bao giờ ghi `Phase: DONE` hay `Phase: DONE (TASK-xxx)` khi dự án chưa hoàn tất 100% queue.
+1. **Task-Bound Continuous Sessions:** Toàn bộ bước nhỏ trong 1 Task chạy trong 1 session liên tục để tận dụng 100% Prompt Caching.
+2. **Flush Memory on Task Switch:** Bộ nhớ phiên được làm sạch hoàn toàn khi đổi sang Task mới để chống context drift.
+3. **Context Pruning (JIT):** Chỉ inject đúng ~80 dòng tóm tắt cần thiết vào prompt đầu vào.
+4. **Compaction Hard Stop (Exit 7):** Nếu hội thoại bị auto-compaction, script dừng khẩn cấp để yêu cầu chia nhỏ task.
 
 ---
 
-## 3. Exit Codes & Task Transition
+## 3. Chế Độ Overnight Non-Blocking
 
-Mỗi iteration kết thúc với một trong các exit codes/trạng thái sau:
-
-| Code / Action | Ý nghĩa | Hành động tiếp theo |
-|---------------|---------|---------------------|
-| `EXIT_DONE` (`Phase: ALL_DONE`) | Tất cả tasks trong queue đã xử lý xong và verified | Cập nhật PROOF_OF_SOLUTION.md, kết thúc loop |
-| `EXIT_CONTINUE` | Iteration xong, còn task tiếp theo | Cập nhật PROGRESS_LOG.md, commit, tiếp tục iteration |
-| `TASK_BLOCKED` (Overnight) | 1 task bị kẹt, không dừng harness.sh | Ghi `BLOCKERS/<TASK_ID>.md`, đổi status `[!] BLOCKED`, chuyển sang task TODO tiếp |
-| `EXIT_BLOCKED` (Strict Mode) | Dừng toàn bộ script khẩn cấp | Tạo `BLOCKED.md` ở root (chỉ dùng khi dùng cờ --stop-on-block) |
-| `EXIT_RETRY` | Iteration thất bại, retry | Append DEBATE_LOG.md, cập nhật PLAN.md, retry |
+Khi gặp blocker không thể tự giải quyết:
+1. AI ghi chi tiết sự cố vào `pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md`.
+2. Đổi trạng thái dòng task trong `Tasks_list.md` thành `[!] BLOCKED`.
+3. Giải phóng `STATUS.md`.
+4. Vòng lặp tự động nhặt task `[ ] TODO` tiếp theo và tiếp tục chạy suốt đêm!
 
 ---
 
-## 4. Context Management & Optimization
-
-### Quy tắc "Task-Bound Session & Context Pruning"
-1. **Task-Bound Session (Phiên Theo Task)**: Tất cả các bước nhỏ (Orient → Plan → Execute → Verify) của **CÙNG 1 Task** chạy liên tục trong 1 phiên hội thoại duy nhất. AI tận dụng 100% Prompt Caching và tốc độ phản hồi tức thì.
-2. **Flush Memory on Task Switch**: Chỉ khi Task hiện tại hoàn thành (`[x] DONE`) hoặc bị nghẽn (`[!] BLOCKED`), bộ nhớ phiên làm việc mới được làm sạch hoàn toàn trước khi chuyển sang nạp Task mới.
-3. **Context Pruning (Cắt Tỉa Ngữ Cảnh)**: Tự động trích xuất đúng nội dung Task Spec của task active từ `Tasks_list.md`. Cắt bỏ 80% văn bản quy trình dài dòng không liên quan.
-4. **Inline Constitution (Luật Nén Trực Tiếp)**: 10 Điều luật bất biến được nén trực tiếp trong `.agents/AGENTS.md` và prompt đầu vào. Không ép AI gọi tool `view_file` mở lại các file docs trùng lặp ở mỗi lần khởi động.
-
-
----
-
-## 5. Backpressure Mechanism (Overnight Non-Blocking)
-
-Khi gặp vấn đề không thể tự giải quyết:
-
-```
-Nếu gặp ≥ 2 lần liên tiếp:
-  - Kết quả không verify được
-  - Kết quả contradicts với spec
-  - Cần thông tin không có trong docs
-
-→ NẾU Ở OVERNIGHT MODE (Mặc định):
-  1. Ghi chi tiết sự cố vào: pipeline/docs/runtime/BLOCKERS/<TASK_ID>.md
-  2. Đánh dấu dòng task trong Tasks_list.md thành: [!] BLOCKED
-  3. Bỏ qua task kẹt và tự động chọn Task [ ] TODO tiếp theo!
-
-→ NẾU Ở STRICT MODE (--stop-on-block):
-  DỪNG LẠI. Tạo BLOCKED.md ở root. Không tự ý tiếp tục.
-```
-
----
-
-## 6. Dual-Model Mode (`--review-model`)
-
-Để khắc phục **confirmation bias** (cùng model vừa viết code vừa tự review), harness hỗ trợ chế độ 2 model:
+## 4. Dual-Model Mode (`--review-model`)
 
 ```bash
-# Kích hoạt Dual-Model Review
-./pipeline/docs/harness.sh --review-model gemini-3.6-flash-low
-
-# Dual-Model với reviewer cao cấp hơn
-./pipeline/docs/harness.sh --review-model claude-sonnet-4-6 --review-timeout 8m0s
+./pipeline/scripts/harness.sh --review-model gemini-3.6-flash-low
 ```
-
-> ⚠️ **Bắt buộc chỉ định tên model:** Không có model mặc định. Bỏ qua `--review-model` = single-model mode.
-
-### Flow mỗi iteration khi Dual-Model active
-
-```
-┌─ EXECUTOR (default model) ──────────────────────────────────┐
-│  Phase 0-4: ORIENT → SPEC → PLAN → EXECUTE → VERIFY → REPORT│
-│  Chạy: python3 pipeline/scripts/verify.py                   │
-│  Cập nhật: STATUS.md, PROGRESS_LOG.md (dừng trước commit)    │
-└─────────────────────────────────────────────────────────────┘
-                │ VERIFY PASS
-                ▼
-┌─ REVIEWER (--review-model) ─────────────────────────────────┐
-│  Phase 5: Cognitive Review dựa trên git diff HEAD           │
-│  Tự động AUTO-APPROVE nếu không có code changes (Diff rỗng)  │
-│  Ghi kết quả vào: pipeline/docs/runtime/DEBATE_LOG.md       │
-└─────────────────────────────────────────────────────────────┘
-                │
-      ┌─────────┴──────────────┐
-      ▼ APPROVED               ▼ REJECTED
-   Harness Native Commit     Executor đọc DEBATE_LOG → fix → re-VERIFY
-   (Tự động commit git,      Reviewer kiểm tra lại
-   tiết kiệm 1 lần LLM)      (tối đa REVIEW_MAX_RETRIES lần)
-                                       │
-                              Vẫn REJECTED sau max retries?
-                                       ▼
-                              Executor ghi BLOCKERS/<TASK_ID>.md
-                              Task → [!] BLOCKED
-                              Tự động chuyển sang task TODO tiếp theo
-```
-
-### Tùy chỉnh Reviewer Prompt
-
-Reviewer prompt được đọc từ `pipeline/docs/core/REVIEWER_PROMPT_TEMPLATE.md` — **không hardcode trong harness.sh**.
-Thay đổi template để tùy chỉnh mà không cần sửa harness.sh.
-
-Template hỗ trợ:
-- Checklist review tùy chỉnh
-- Project-specific rules (inject tự động vào cuối prompt)
-- Placeholders được harness thay thế tự động: `{{TIER1_SUMMARY}}`, `{{GIT_DIFF}}`, `{{ITERATION}}`, `{{DEBATE_LOG_PATH}}`
-
-### Giá trị model hợp lệ
-
-Chạy `agy models` để xem danh sách. Ví dụ:
-- `gemini-3.6-flash-low` — rẻ nhất, đủ để review logic (khuyến nghị mặc định)
-- `gemini-3.5-flash-medium` — cân bằng cost/quality
-- `claude-sonnet-4-6` — reviewer chất lượng cao nhất cho task phức tạp
-
-### State machine khi Dual-Model
-
-| Trạng thái | Model / Engine | Action |
-|-----------|----------------|--------|
-| `EXECUTING` | Executor | PHASE 0-4 + PHASE 7, chạy verify.py, update STATUS.md |
-| `REVIEWING` | Reviewer (khác) | PHASE 5, đọc git diff HEAD + tier1 summary. Fresh agy conversation. (Skip nếu diff rỗng) |
-| `REVIEW_REJECTED` | Executor | Fix dựa trên DEBATE_LOG, re-verify. Max REVIEW_MAX_RETRIES cycles. |
-| `REVIEW_BLOCKED` | Executor | Hết retries → ghi BLOCKERS/<TASK_ID>.md, chuyển task tiếp |
-| `COMMITTING` | Harness Native | Native git commit tự động khi APPROVED (Tiết kiệm 1 phiên LLM) |
-
-> ⚠️ **Khi không có `--review-model`:** harness hoạt động hoàn toàn như cũ (single-model, backward compatible). Executor tự thực hiện đủ Phase 0-7.
-
+- **Executor:** Viết code, chạy `verify.py` pass 100%.
+- **Reviewer:** Phản biện độc lập qua `git diff HEAD`. Tự động Auto-Approve nếu diff rỗng.
+- **Commit:** Harness tự động commit Git khi Reviewer thông qua.
 
 ---
 
-## 7. Recovery Protocol
-
-Khi mọi thứ sai:
-```bash
-# Xem lịch sử
-git log --oneline -20
-
-# Reset về commit cuối an toàn
-git reset --hard HEAD
-
-# Reset về N commits trước
-git reset --hard HEAD~N
-
-# Xem diff trước khi reset
-git diff HEAD~1
-```
-
-Sau recovery: cập nhật `PROGRESS_LOG.md` với entry "Recovery: <lý do>"
-
----
-
-## 8. Iteration Template
-
-Mỗi iteration trong `pipeline/docs/runtime/ITERATIONS/iter_NNN.md` phải có:
-```markdown
-# Iteration NNN
-- Date: YYYY-MM-DD HH:MM
-- State In: <trạng thái đầu iteration>
-- Goal: <mục tiêu cụ thể của iteration này>
-- Actions Taken: <danh sách hành động>
-- Result: PASS | FAIL | PARTIAL
-- Evidence: <link/snippet bằng chứng>
-- State Out: <trạng thái cuối iteration>
-- Next Action: <bước tiếp theo>
-```
-
----
-
-## 9. Python Engine Layer (`engine/`)
-
-Bên cạnh `harness.sh` (shell orchestrator), workspace có thêm **`engine/` Python package** — đây là tầng thực thi stateful dùng cho Agent tích hợp trong code. Hai lớp **bổ sung** nhau, không thay thế.
-
-| Thành phần | Vai trò |
-|------------|---------|
-| `pipeline/docs/harness.sh` | Shell orchestrator cho Dual-Model mode, quản lý iteration lifecycle, gọi `agy` CLI |
-| `engine/` Python package | Thư viện Event Logging, Security Gate, Cost Tracking — dùng trong Agent code |
-| `pipeline/scripts/verify.py` | Tier 1 deterministic verification (Ruff+Mypy+Bandit+Pytest) — **PHẢI chạy trước commit** |
-
-### Session Log Location
-
-Session JSONL files (append-only, ground truth):
-```
-pipeline/docs/runtime/session_<TASK_ID>.jsonl  ← KHÔNG git-track (xem .gitignore)
-```
-
-### CLI Entry Point (Skeleton)
-
-```bash
-# Khởi tạo session mới
-python3 bin/agent-run --task TASK-001
-
-# Resume từ session log bị gián đoạn
-python3 bin/agent-run --task TASK-001 --resume
-```
-
-> ⚠️ **`engine/harness/loop.py` là skeleton** — log events nhưng chưa có LLM connector thực sự.
-> Để có full autonomous loop, cần implement `engine/harness/llm_provider.py`.
-
-### Quy tắc BẮTBUỘC khi dùng Engine
-
-1. **Trước mọi commit**: `python3 pipeline/scripts/verify.py` phải `Status: PASS`
-2. **Event log** phải được append đúng loại: `TOOL_CALL` → `TOOL_RESULT` → không bỏ bước
-3. **Vault Proxy**: Không bao giờ truyền raw API key vào `EventLog.append()` payload
+## 5. Bảng Mã Thoát POSIX (Tham chiếu `docs/core/EXIT_CODES.md`)
+- `0`: Done (Toàn bộ hàng đợi hoàn tất)
+- `3`: Blocked (Chế độ Strict Mode hoặc STOP.md)
+- `4`: Max Iterations reached
+- `6`: Stuck circuit breaker (Không có tiến độ commit)
+- `7`: Context compaction hard stop
+- `8`: Provider process / API failure

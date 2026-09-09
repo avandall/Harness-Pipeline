@@ -13,20 +13,33 @@ wheels/
 .env
 *.env
 
-# SQLite Data files
+# SQLite Data & Database files
 data/*.db
 data/
+*.db
+*.sqlite
+*.sqlite3
 
-# OS / Windows rác metadata files
+# PDF Reports & Output Artifacts
+reports/
+reports/*.pdf
+output/
+*.pdf
+
+# OS / Windows metadata files & logs
 *Zone.Identifier*
 *:Zone.Identifier
 *.log
 logs/
 
-
 # Agent Pipeline Transient Runtime Artifacts
+pipeline/.ralph/
+.ralph/
 pipeline/docs/runtime/session_*.jsonl
 pipeline/docs/runtime/session_*.log
 pipeline/docs/runtime/ITERATIONS/
 pipeline/docs/runtime/VERIFICATION_REPORT.md
 pipeline/docs/runtime/DEBATE_LOG.md
+pipeline/docs/runtime/PLAN_DEBATE.md
+pipeline/docs/runtime/PLAN_SEAL.sha256
+pipeline/docs/runtime/PLAN_SEAL_COMMIT
