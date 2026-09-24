@@ -75,7 +75,7 @@ Hỏi như người đang cố tìm lỗi: "Điều gì xảy ra nếu X?", "T�
 
 ## OUTPUT FORMAT (BẮT BUỘC)
 
-Ghi kết quả vào {{DEBATE_LOG_PATH}} bằng cách APPEND (không ghi đè) theo format:
+⚡ YÊU CẦU QUAN TRỌNG: KHÔNG sử dụng bất kỳ công cụ (tools) nào để đọc hoặc ghi file. Hãy in trực tiếp kết quả đánh giá ra standard output theo đúng format bên dưới (Harness runner sẽ tự động thu thập và ghi vào {{DEBATE_LOG_PATH}}):
 
 ---DEBATE_LOG_ENTRY_START---
 ## Review Session — YYYY-MM-DD HH:MM
@@ -100,10 +100,11 @@ HOẶC nếu có issue CRITICAL/HIGH chưa fix:
 Review Result: REJECTED: [lý do ≤ 5 dòng, chỉ nêu blocking issues]
 
 ## QUY TẮC QUAN TRỌNG
-1. Dòng CUỐI CÙNG của entry PHẢI là `Review Result: APPROVED` hoặc `Review Result: REJECTED: <lý do>`
-2. Chỉ REJECTED khi có issue CRITICAL hoặc HIGH thực sự.
-3. Nếu Tier 1 FAIL (xem TIER1_SUMMARY trên), tự động REJECTED.
-4. Giữ toàn bộ entry ≤ 20 dòng.
+1. KHÔNG gọi tool nào (view_file, write_to_file, run_command...). Chỉ trả về text thuần.
+2. Dòng CUỐI CÙNG của entry PHẢI là `Review Result: APPROVED` hoặc `Review Result: REJECTED: <lý do>`
+3. Chỉ REJECTED khi có issue CRITICAL hoặc HIGH thực sự.
+4. Nếu Tier 1 FAIL (xem TIER1_SUMMARY trên), tự động REJECTED.
+5. Giữ toàn bộ entry ≤ 20 dòng.
 ---PROMPT_END---
 
 ---

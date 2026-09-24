@@ -21,7 +21,7 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
 
 ---
 
-## 4 TIÊU CHÍ THẨM ĐỊNH KHẮT KHE (Mẹo 12 & 14 trong USER_GUIDE.md):
+## 5 TIÊU CHÍ THẨM ĐỊNH KHẮT KHE (Mẹo 12 & 14 trong USER_GUIDE.md):
 
 ### 1. Logic Holes, Edge Cases & Failure Modes
 - Kế hoạch có giả định ngầm gì không?
@@ -32,16 +32,39 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
 - Ranh giới được định nghĩa trong `BOUNDARIES.md` có chặt chẽ không?
 - Có nguy cơ AI sửa tràn lan ra ngoài scope không?
 
-### 3. Cụm Logic & Thứ tự Thực thi (Atomic Units)
+### 3. Cụm Logic, Độ Mịn & Thứ Tự Thực Thi (Atomic Units & Task Sizing)
 - Thứ tự phân rã: Foundation / Database Model / Schemas dùng chung có được làm trước không?
 - Core Logic / Service làm tiếp theo? API / Leaf features làm sau cùng?
-- Mỗi task trong `Tasks_list.md` có đủ nhỏ để hoàn thành trong 1 session độc lập không?
+- **Định lượng độ lớn của Task (Task Blast Radius & Timeout Guard - BẮT BUỘC KIỂM TRA)**:
+  * **Giới hạn số files:** Mỗi task chỉ được phép sửa tối đa 5–8 files.
+  * **Giới hạn phạm vi Microservices:** TUYỆT ĐỐI CẤM 1 task đụng chạm đồng thời nhiều microservices (ví dụ: cấm các task 'Chuẩn hóa Timezone/Config cho toàn bộ microservices').
+  * **NẾU PHÁT HIỆN TASK QUÁ LỚN (>8 files hoặc đa service):** BẮT BUỘC REJECT và yêu cầu Planner chia nhỏ thành các sub-tasks độc lập theo từng service (ví dụ: TASK-xxxA cho Core/Shared Library, TASK-xxxB cho Service 1, TASK-xxxC cho Service 2...).
+  * Mỗi task phải được thiết kế để hoàn thành trọn vẹn và verify pass trong vòng 15–20 phút.
 
 ### 4. Acceptance Criteria & Test Cases (DoD Đo lường được)
 - TỪNG TASK trong `Tasks_list.md` PHẢI có:
   - Mục tiêu rõ ràng.
   - Danh sách test cases cụ thể (happy path + edge cases).
   - Tiêu chí nghiệm thu (DoD) có thể chạy lệnh kiểm tra tự động (`python3 pipeline/scripts/verify.py` hoặc test suite).
+
+### 5. Dependency-First & Import Integrity (Chống Lỗi Import & Phụ Thuộc Ngược)
+- **Kiểm tra đồ thị phụ thuộc giữa các Task**:
+  - Task sau có bị task trước import khi file đó chưa được tạo không?
+  - BẮT BUỘC sắp xếp theo thứ tự Bottom-Up:
+    * Cụm 1: Shared Interfaces, Types, Config, Constants, Base Exceptions.
+    * Cụm 2: Data Models, Migrations, Persistence Layer, DB Clients.
+    * Cụm 3: Services & Core Business Logic (chỉ import Cụm 1 & 2).
+    * Cụm 4: API Controllers, Endpoints, Routers, UI Components (chỉ import Cụm 1, 2, 3).
+  - **NẾU PHÁT HIỆN TASK TRƯỚC PHỤ THUỘC / IMPORT CODE CỦA TASK SAU**: BẮT BUỘC REJECT và chỉ thị rõ ràng cho Planner phải đảo lại thứ tự các task trong `Tasks_list.md`.
+
+### 6. Project Tree & Directory Scaffolding First (Bắt buộc cho Dự Án Mới)
+- **Kiểm tra Task đầu tiên (`TASK-001`)**:
+  - Với bất kỳ dự án mới nào (hoặc khi bắt đầu từ một repo trống): Task đầu tiên (`TASK-001`) **BẮT BUỘC PHẢI LÀ Scaffolding & Directory Skeleton**:
+    * Định nghĩa rõ ràng cây thư mục (tránh để các task sau tự ý ném folder tràn lan ra root).
+    * Tạo tất cả thư mục package và các file `__init__.py` tương ứng.
+    * Khởi tạo file manifest (`pyproject.toml` / `package.json`) với đầy đủ dependencies.
+    * Khởi tạo baseline anchor files (`config`, `constants`, `types`).
+  - **NẾU DỰ ÁN MỚI MÀ TASK 1 KHÔNG PHẢI LÀ DỰNG CÂY THƯ MỤC & PACKAGES**: BẮT BUỘC REJECT! Không cho phép viết logic hay tính năng khi khung xương project chưa được dựng sẵn.
 
 ---
 

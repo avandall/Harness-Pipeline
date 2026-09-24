@@ -35,7 +35,24 @@ if python3 "$ROOT/scripts/verify.py"; then
   echo "✅ [FOLLOW-UP] Verification passed 100%."
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
     git add -A
-    git commit -m "[FOLLOW-UP] feat: $REQUEST (verified pass)"
+    file_changes=$(git diff --cached --name-status 2>/dev/null | head -n 12 | sed 's/^/- /')
+    stat_summary=$(git diff --cached --stat 2>/dev/null | tail -1 | sed 's/^[ \t]*//')
+    commit_msg=$(cat <<EOF
+[FOLLOW-UP] feat: ${REQUEST}
+
+## Summary
+- Request: ${REQUEST}
+- Verified clean implementation with zero regressions across codebase.
+
+## Key Changes
+${file_changes}
+$([ -n "$stat_summary" ] && echo "(${stat_summary})")
+
+## Verification
+- Deterministic Quality Verification: PASS 100% (python3 pipeline/scripts/verify.py)
+EOF
+)
+    git commit -m "$commit_msg"
     echo "✅ [FOLLOW-UP] Committed cleanly to git."
   fi
 else

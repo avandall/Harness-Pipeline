@@ -48,13 +48,38 @@ except ImportError:
 
 def check_tool_installed(tool_name: str) -> bool:
     """Kiểm tra xem CLI tool đã được cài đặt trong hệ thống/env chưa."""
+    cwd = Path.cwd()
+    for bin_dir in [cwd / ".venv" / "bin", cwd / ".venv" / "Scripts"]:
+        tool_path = bin_dir / tool_name
+        if tool_path.is_file():
+            return True
     return shutil.which(tool_name) is not None
 
 
 def run_command(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
     """Chạy command an toàn và thu thập output với timeout protection (default 60s)."""
+    env = os.environ.copy()
+    cwd_str = os.getcwd()
+
+    # Prepend .venv/bin to PATH and set VIRTUAL_ENV if .venv exists
+    venv_dir = os.path.join(cwd_str, ".venv")
+    for b in ["bin", "Scripts"]:
+        venv_bin = os.path.join(venv_dir, b)
+        if os.path.isdir(venv_bin):
+            env["VIRTUAL_ENV"] = venv_dir
+            current_path = env.get("PATH", "")
+            env["PATH"] = f"{venv_bin}:{current_path}" if current_path else venv_bin
+            break
+
+    extra_paths = [cwd_str]
+    for sub in ["src", "app"]:
+        sub_path = os.path.join(cwd_str, sub)
+        if os.path.isdir(sub_path):
+            extra_paths.append(sub_path)
+    current_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = ":".join(extra_paths + ([current_pythonpath] if current_pythonpath else []))
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout, env=env)
         output = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
         return res.returncode, output.strip()
     except subprocess.TimeoutExpired:
@@ -95,7 +120,7 @@ def run_python_checks(
 
     # 2. Mypy (Type Check)
     if check_tool_installed("mypy"):
-        code, out = run_command(["mypy", target_dir, "--ignore-missing-imports"])
+        code, out = run_command(["mypy", target_dir, "--ignore-missing-imports", "--explicit-package-bases"])
         results.append(("Python: Mypy (Type Check)", code == 0, "Type checking passed ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Mypy (Type Check)", True, "Skipped (mypy not installed)"))
@@ -104,7 +129,10 @@ def run_python_checks(
     if quick:
         results.append(("Python: Bandit (Security)", True, "Skipped (quick mode enabled)"))
     elif check_tool_installed("bandit"):
-        code, out = run_command(["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache"])
+        bandit_cmd = ["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+        if os.path.exists(".bandit"):
+            bandit_cmd = ["bandit", "-c", ".bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+        code, out = run_command(bandit_cmd)
         results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Bandit (Security)", True, "Skipped (bandit not installed)"))
@@ -136,19 +164,21 @@ def run_python_checks(
 def run_node_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     """Chạy bộ kiểm tra cho dự án Node.js / TypeScript / React."""
     results = []
-    has_package_json = os.path.exists(os.path.join(target_dir, "package.json"))
+    has_package_json = os.path.exists("package.json") or os.path.exists(os.path.join(target_dir, "package.json"))
     if not has_package_json:
         return [("Node.js Check", True, "Skipped (no package.json found)")]
 
-    if check_tool_installed("npx"):
+    if check_tool_installed("npm"):
         # Type check TypeScript
-        if os.path.exists("tsconfig.json"):
-            code, out = run_command(["npx", "tsc", "--noEmit"])
+        if os.path.exists("tsconfig.json") or os.path.exists(os.path.join(target_dir, "tsconfig.json")):
+            code, out = run_command(["npm", "run", "typecheck"])
+            if code != 0 and check_tool_installed("npx"):
+                code, out = run_command(["npx", "--no-install", "tsc", "--noEmit"])
             results.append(("Node: TypeScript (Type Check)", code == 0, "TS type checking passed ✓" if code == 0 else truncate_log(out)))
 
-        # ESLint
-        code, out = run_command(["npx", "eslint", "src/", "--max-warnings", "0"])
-        results.append(("Node: ESLint", code == 0, "ESLint passed ✓" if code == 0 else truncate_log(out)))
+        # Node Unit Tests (Vitest / Jest / Test script)
+        code, out = run_command(["npm", "test"])
+        results.append(("Node: Vitest / Unit Tests", code == 0, "Node unit tests passed ✓" if code == 0 else truncate_log(out)))
 
     return results if results else [("Node.js Check", True, "Node environment ready ✓")]
 

@@ -12,7 +12,7 @@
 
 | Task ID | Tên Task | Phase | Ưu tiên | Trạng thái | Ghi chú / Blocker |
 |---------|----------|-------|---------|------------|-------------------|
-| `TASK-001` | [Tên Task Mẫu 1] | Phase 1 | P0 | `[ ] TODO` | Khởi tạo module mẫu |
+| `TASK-001` | Project Scaffolding, Package Layout & Manifest Initialization | Phase 1 | P0 | `[ ] TODO` | Dựng khung xương thư mục, __init__.py & manifest |
 
 > **Trạng thái hợp lệ:**
 > - `[ ] TODO`: Chưa làm, chờ AI chọn
@@ -26,30 +26,31 @@
 
 ---
 
-### 📌 TASK-001: [Tên Task Mẫu 1]
+### 📌 TASK-001: Project Scaffolding, Package Layout & Manifest Initialization
 
 #### Metadata
 ```
 Task ID:         TASK-001
-Task Name:       [Tên Task Mẫu 1]
+Task Name:       Project Scaffolding, Package Layout & Manifest Initialization
 Phase:           Phase 1
-Task Type:       feat / fix / refactor
+Task Type:       scaffold / setup
 Priority:        P0-Critical
 Trạng thái:      [ ] TODO
 Ngày tạo:        [YYYY-MM-DD]
 ```
 
 #### Bối cảnh & Mục tiêu (Why & What)
-- **Why:** [Lý do cần làm task này]
-- **What:** [Mô tả chi tiết việc cần thực hiện]
+- **Why:** Dự án mới cần cấu trúc thư mục rõ ràng và cố định ngay từ đầu để ngăn chặn AI tự ý ném thư mục tràn lan ra root và tránh lỗi import.
+- **What:** Khởi tạo toàn bộ cây thư mục chuẩn theo `TECH_CONTEXT.md`, tạo tất cả file `__init__.py` cho các package, khởi tạo dependency manifest (`pyproject.toml` hoặc `package.json`), và tạo các mỏ neo cốt lõi (`config`, `constants`, `types`).
 
 #### Acceptance Criteria (Tiêu chí hoàn thành)
-- [ ] Tiêu chí nghiệm thu 1
-- [ ] Tiêu chí nghiệm thu 2
+- [ ] Cấu trúc thư mục được tạo đầy đủ theo kiến trúc quy định trong `TECH_CONTEXT.md`.
+- [ ] Tất cả các package directories đều có file `__init__.py`.
+- [ ] File manifest (`pyproject.toml` / `requirements.txt` / `package.json`) khai báo đúng dependencies.
 - [ ] Tier 1 verification checks pass 100%.
 
 #### Scope (Phạm vi)
-- **Files được sửa/tạo:** `src/**`, `tests/**`
+- **Files được sửa/tạo:** Thư mục mã nguồn theo kiến trúc (`app/**` hoặc `src/**` hoặc packages quy định), `pyproject.toml`, `package.json`, `tests/**`
 - **Files cấm đụng:** `.env`, `pipeline/docs/core/**`
 
 #### Verification Commands

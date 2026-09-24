@@ -9,5 +9,5 @@
 2. Check `BOUNDARIES.md` and `TECH_CONTEXT.md`.
 3. Implement the requested modification cleanly.
 4. Run `python3 pipeline/scripts/verify.py` to ensure zero regressions across the codebase.
-5. Create Git commit: `[FOLLOW-UP] <type>(<scope>): <description>`.
+5. Create Git commit: `[FOLLOW-UP] <type>(<scope>): <title>` with detailed body (Summary, Key Changes, Verification).
 6. Append a summary of changes to `pipeline/docs/runtime/PROGRESS_LOG.md`.

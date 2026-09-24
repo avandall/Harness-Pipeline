@@ -14,6 +14,7 @@ CONTEXT_DIR="${DOCS_DIR}/context"
 RUNTIME_DIR="${DOCS_DIR}/runtime"
 PROMPTS_DIR="${PIPELINE_DIR}/prompts"
 DEBATE_LOG="${RUNTIME_DIR}/PLAN_DEBATE.md"
+export PYTHONPATH=".:./src:${PIPELINE_DIR}/..:${PYTHONPATH:-}"
 
 MAX_TURNS=5
 TIMEOUT="10m0s"
@@ -160,7 +161,7 @@ EOF
   local approved=false
 
   while (( turn < MAX_TURNS )); do
-    ((turn++))
+    turn=$((turn + 1))
     log_section "TURN ${turn} / ${MAX_TURNS} — CRITIC REVIEW & ADVERSARIAL INTERVIEW"
 
     # 1. Step 1: CRITIC Turn
@@ -202,8 +203,16 @@ EOF
     if git rev-parse --git-dir >/dev/null 2>&1; then
       if [[ -n "$(git status --porcelain "${CONTEXT_DIR}" 2>/dev/null)" ]]; then
         log_info "Committing finalized context specifications to git..."
-        git add "${CONTEXT_DIR}"
-        git commit -m "docs(plan): finalize implementation plan via dual-model debate (turn ${turn})" || true
+        local commit_msg="docs(plan): finalize implementation plan via dual-model debate (turn ${turn})
+
+## Summary
+- Validated and refined task queue and architecture specifications through dual-model debate.
+- Verified task dependencies and scaffolding readiness for autonomous execution.
+
+## Verification
+- Dual-model debate consensus reached (Turn ${turn}/${MAX_TURNS})
+"
+        git commit -m "$commit_msg" || true
         log_ok "Context cleanly committed to git."
       fi
     fi

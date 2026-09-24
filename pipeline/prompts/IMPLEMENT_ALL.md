@@ -10,7 +10,7 @@
    - Implement code changes within `BOUNDARIES.md`.
    - Run `python3 pipeline/scripts/verify.py` until PASS 100%.
    - Mark task `[x] DONE` in `Tasks_list.md`.
-   - Create a clean git commit: `[TASK-ID] <type>(<scope>): <description>`.
+   - Create a clean, professional git commit: `[TASK-ID] <type>(<scope>): <title>` with detailed body (Summary, Key Changes, Verification). Never commit generic one-liners.
 3. If any individual task hits a blocker (2 failed attempts):
    - Write `BLOCKERS/<TASK_ID>.md`.
    - Mark `[!] BLOCKED` in `Tasks_list.md`.

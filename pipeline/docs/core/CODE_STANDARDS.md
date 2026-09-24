@@ -80,6 +80,31 @@ src/
 └── [feature]/      # Feature-based modules
 ```
 
+### 3.3 Import & Package Integrity Standards (Chống lỗi Import)
+Để ngăn chặn hoàn toàn các lỗi `ModuleNotFoundError`, `ImportError`, và gãy cấu trúc module khi AI tự động sinh code:
+
+1. **Layout-Aware Absolute Imports Only**:
+   - Luôn dùng **Absolute Import** xuất phát từ project root hoặc root package được định nghĩa trong `TECH_CONTEXT.md`:
+     - Đối với Flat / Multi-package layout: ✅ `from cli.commands import catalog`, ✅ `from warehouse.db_store import DatabaseStore`
+     - Đối với App / Src layout: ✅ `from app.models.account import Account`, ✅ `from src.services.user import UserService`
+     - ❌ `from ...services.user import UserService` (Cấm relative import sâu nhiều tầng `../..` vì dễ gây lỗi `attempted relative import with no known parent package`).
+2. **Explicit Package `__init__.py`**:
+   - Khi tạo bất kỳ thư mục/package Python mới nào (ở root, subfolder, hay `tests/`), **BẮT BUỘC** phải tạo file `__init__.py` đồng thời để các công cụ Mypy, Pytest và runtime nhận diện được package.
+3. **No Phantom / Hallucinated Imports (Kiểm tra symbol tồn tại trước khi Import)**:
+   - **CẤM IMPORT THEO SUY ĐOÁN**: Tuyệt đối không import các class, function, hay biến mà bạn "tưởng tượng" là đã có.
+   - Trước khi viết `from <module> import <Symbol>`, AI **BẮT BUỘC** phải dùng tool kiểm tra file `<module>` trên filesystem xem nó có tồn tại không, và mở file ra đọc xem có thực sự định nghĩa `<Symbol>` đó hay không.
+   - Với thư viện bên ngoài (ví dụ `rich.console`, `typer`): Phải kiểm tra cú pháp import chính xác của thư viện đó từ tài liệu, không tự chế cú pháp import ma (phantom imports).
+4. **Circular Import Protection**:
+   - Nghiêm cấm import chéo vòng tròn giữa các module (`A -> B -> A`).
+   - Nếu chỉ import class/type để phục vụ Type Hinting trong Python, BẮT BUỘC đặt trong block `if TYPE_CHECKING:`:
+     ```python
+     from typing import TYPE_CHECKING
+     if TYPE_CHECKING:
+         from warehouse.db_store import DatabaseStore
+     ```
+5. **No Undeclared Third-Party Dependencies**:
+   - Tuyệt đối KHÔNG tự tiện import thư viện thứ 3 khi chưa được khai báo trong `pyproject.toml`, `requirements.txt`, hoặc `package.json`. Phải kiểm tra manifest trước.
+
 ---
 
 ## 4. Error Handling

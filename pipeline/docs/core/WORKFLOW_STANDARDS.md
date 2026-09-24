@@ -142,13 +142,46 @@ Ghi kết quả review vào `pipeline/docs/runtime/DEBATE_LOG.md`. Cần đạt 
 - **Khi nào commit?**: CHỈ commit khi task hiện tại đã được thực thi, kiểm tra (Phase 4 VERIFY) và phản biện (Phase 5 REVIEW) hoàn tất 100%, được đánh dấu `[x] DONE` trong `Tasks_list.md`.
 - **Khi nào KHÔNG commit?**: Trong các iterations trung gian khi task chưa xong, KHÔNG tạo git commit lặt vặt (như `chore: iter-N complete` hay commit lắt nhắt mỗi lần sửa file).
 
-### Commit message format
+### Commit message format (Chuẩn hóa chuyên nghiệp & chi tiết)
 
+Commit message **TUYỆT ĐỐI KHÔNG** chỉ ghi mỗi tiêu đề sơ sài như "completed task" hay 1 dòng trống rỗng. Phải tuân theo chuẩn Conventional Commits cấu trúc đa dòng đầy đủ:
+
+```gitcommit
+[TASK-ID] <type>(<scope>): <Mô tả ngắn gọn mục tiêu hoàn thành dưới 72 ký tự>
+
+## Summary
+- Task: <Tên đầy đủ của Task trích xuất từ Tasks_list.md>
+- Why: <Lý do và bối cảnh kỹ thuật cần thực hiện>
+- What: <Giải pháp cốt lõi đã hiện thực>
+
+## Key Changes
+- <Chi tiết các file/module/hàm chính đã thêm mới, sửa đổi hoặc cấu trúc lại>
+- <Thống kê diff stat hoặc danh sách file thay đổi>
+
+## Verification
+- Deterministic Quality Verification: PASS 100% (python3 pipeline/scripts/verify.py)
+- Review & Audit: Verified & Approved by <Review Mode: DUAL-MODEL / SINGLE-MODEL>
 ```
-[TASK-ID] <type>(<scope>): <clear description of completed task>
 
-Types: feat | fix | refactor | docs | test | chore
-Example: [TASK-001] feat(auth): implement JWT login and session handler
+**Types:** `feat` | `fix` | `refactor` | `docs` | `test` | `chore`
+**Ví dụ thực tế:**
+```gitcommit
+[TASK-001] chore(scaffold): initialize package layout and core manifests
+
+## Summary
+- Task: Project Scaffolding, Package Layout & Manifest Initialization
+- Why: Establish clean architecture and avoid phantom imports or unstructured file placement at workspace root.
+- What: Created core package trees, initialized pyproject.toml with uv dependencies, and placed empty __init__.py files.
+
+## Key Changes
+- Added src/core/__init__.py, src/api/__init__.py, src/config.py
+- Initialized pyproject.toml and locked virtualenv via uv
+- Added baseline tests/test_smoke.py
+(3 files changed, 45 insertions(+))
+
+## Verification
+- Deterministic Quality Verification: PASS 100% (Ruff, Mypy, Pytest)
+- Review & Audit: Verified & Approved by DUAL-MODEL
 ```
 
 ---
@@ -191,9 +224,9 @@ Output không verify được?
   → PHASE 5 → DEBATE_LOG.md → Retry hoặc BLOCKED.md
 
 Task xong ([x] DONE)?
-  → PHASE 6 (COMMIT): git add -A && git commit -m "[TASK-ID] <type>(<scope>): <mô tả>"
+  → PHASE 6 (COMMIT): git add -A && git commit -m "$COMMIT_MSG" (Header + Summary + Key Changes + Verification)
   → PHASE 7 (REPORT): Cập nhật PROGRESS_LOG.md, STATUS.md, Tasks_list.md
-  → Kông bao giờ commit STATUS.md/PROGRESS_LOG.md riêng lẻ!
+  → Không bao giờ commit STATUS.md/PROGRESS_LOG.md riêng lẻ!
 
 Tất cả tasks done?
   → PHASE 7 → Viết PROOF_OF_SOLUTION.md → STATUS.md: Phase: ALL_DONE

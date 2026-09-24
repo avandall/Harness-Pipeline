@@ -3,9 +3,9 @@
 # setup.sh — Next-Gen Installer & Infrastructure Sync for Enterprise Pipeline
 # 
 # Usage:
-#   ./pipeline/setup.sh /path/to/target-proj              # Install or update infrastructure
-#   ./pipeline/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
-#   ./pipeline/setup.sh /path/to/target-proj --override-all # Force-overwrite everything including context
+#   ./pipeline/script/setup.sh /path/to/target-proj              # Install or update infrastructure
+#   ./pipeline/script/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
+#   ./pipeline/script/setup.sh /path/to/target-proj --override-all # Force-overwrite everything including context
 # =============================================================================
 
 set -euo pipefail
@@ -155,6 +155,26 @@ if [[ -f "${GITIGNORE}" ]]; then
     echo "pipeline/.ralph/" >> "${GITIGNORE}"
     echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
   fi
+  if ! grep -q "\.venv" "${GITIGNORE}"; then
+    echo ".venv/" >> "${GITIGNORE}"
+  fi
+fi
+
+# 8. Ensure virtual environment & sync dependencies via uv
+if command -v uv >/dev/null 2>&1; then
+  echo "⚡ [UV] Ensuring virtual environment and syncing dependencies via uv..."
+  if [[ ! -d "${TARGET_DIR}/.venv" ]]; then
+    uv venv "${TARGET_DIR}/.venv"
+  fi
+  if [[ -f "${TARGET_DIR}/pyproject.toml" ]]; then
+    uv pip install --python "${TARGET_DIR}/.venv/bin/python" -e "${TARGET_DIR}" 2>/dev/null || true
+  fi
+  if [[ -f "${TARGET_DIR}/requirements.txt" ]]; then
+    uv pip install --python "${TARGET_DIR}/.venv/bin/python" -r "${TARGET_DIR}/requirements.txt" 2>/dev/null || true
+  fi
+  echo "✅ [UV] Virtualenv and dependencies ready in: ${TARGET_DIR}/.venv"
+else
+  echo "⚠️ [UV] 'uv' CLI not found. Install uv (https://astral.sh/uv) for instant dependency management."
 fi
 
 echo ""

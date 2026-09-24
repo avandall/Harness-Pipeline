@@ -35,7 +35,7 @@ def get_next_todo_task(workspace_dir: Path) -> str:
     content = tasks_file.read_text(encoding="utf-8")
     for line in content.splitlines():
         if "[ ] TODO" in line or "[/] IN_PROGRESS" in line:
-            match = re.search(r"TASK-\d+", line)
+            match = re.search(r"TASK-[A-Za-z0-9_-]+", line)
             if match:
                 return match.group(0)
     return "TASK-001"

@@ -32,7 +32,7 @@ Each iteration of work must be:
 - **Atomic**: Completable in one coherent unit
 - **Verifiable**: Has a clear pass/fail exit condition
 - **Logged**: Appended to `pipeline/docs/runtime/PROGRESS_LOG.md` after completion of each step/iteration (written to filesystem to maintain memory across fresh agy runs)
-- **Committed**: Git commit is created ONLY when the target task is completely DONE (`[x] DONE`). Intermediate iterations update filesystem runtime docs without making git commits.
+- **Committed**: Git commit is created ONLY when the target task is completely DONE (`[x] DONE`). Commit messages must be professional, structured, and detailed with full Summary, Key Changes, and Verification evidence. Intermediate iterations update filesystem runtime docs without making git commits.
 
 Do not compound multiple unrelated changes in one iteration.
 
