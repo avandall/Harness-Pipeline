@@ -14,6 +14,7 @@ Usage:
 import argparse
 import datetime
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -213,6 +214,87 @@ def run_shell_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
     return results if results else [("Shell Check", True, "Shell scripts verified ✓")]
 
 
+ANTI_CHEAT_PATTERNS = [
+    (
+        re.compile(r"^\s*assert\s+True\s*(#.*)?$"),
+        "Banned trivial assertion ('assert True') without real validation logic",
+    ),
+    (
+        re.compile(
+            r"return\s+(True|False|None|\"\"|''|0|\{\}|\[\])\s*#\s*(TODO|FIXME|hack|temp|bypass|cheat|fake|mock)",
+            re.IGNORECASE,
+        ),
+        "Temporary stub/mock bypass return detected",
+    ),
+    (
+        re.compile(
+            r"^\s*pass\s*#\s*(TODO|FIXME|hack|temp|bypass|cheat|fake|mock)",
+            re.IGNORECASE,
+        ),
+        "Empty placeholder stub detected",
+    ),
+    (
+        re.compile(
+            r"#\s*(bypass-verify|fake-pass|ignore-verify|mock-pass)",
+            re.IGNORECASE,
+        ),
+        "Explicit verification bypass flag detected",
+    ),
+]
+
+
+def run_anti_cheat_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
+    """Kiểm tra mã nguồn chống các tệ nạn: fake mocks, trivial assert True, temporary bypass."""
+    violations: list[str] = []
+    base_path = Path(target_dir).resolve()
+    code_exts = {".py", ".ts", ".js", ".go", ".jsx", ".tsx"}
+    ignore_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "pipeline",
+        "Sample_pipeline",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+    }
+
+    for root, dirs, files in os.walk(base_path):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
+        for file in files:
+            p = Path(root) / file
+            if p.suffix in code_exts:
+                try:
+                    rel_file = p.relative_to(base_path)
+                    content = p.read_text(encoding="utf-8", errors="ignore")
+                    for line_no, line in enumerate(content.splitlines(), start=1):
+                        for pattern, desc in ANTI_CHEAT_PATTERNS:
+                            if pattern.search(line):
+                                violations.append(
+                                    f"{rel_file}:{line_no} [{desc}] -> {line.strip()}"
+                                )
+                except (OSError, UnicodeDecodeError):
+                    continue
+
+    if violations:
+        msg = f"Detected {len(violations)} anti-cheat / fake-mock violation(s):\n" + "\n".join(
+            violations[:15]
+        )
+        if len(violations) > 15:
+            msg += f"\n... and {len(violations) - 15} more violation(s)"
+        return [("Quality: Anti-Cheat & Real Implementation Guard", False, msg)]
+    return [
+        (
+            "Quality: Anti-Cheat & Real Implementation Guard",
+            True,
+            "No fake mocks, bypass flags, or trivial assert True detected ✓",
+        )
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Tier 1 Deterministic Verification Engine for Enterprise Agent Pipeline"
@@ -260,6 +342,9 @@ def main():
             check_results.extend(run_go_checks("."))
     else:  # Default: python_backend
         check_results.extend(run_python_checks(".", quick=args.quick, test_target=args.test_target))
+
+    # Universal check: Quality & Anti-Cheat Guard across all presets
+    check_results.extend(run_anti_cheat_checks("."))
 
     all_passed = all(r[1] for r in check_results)
     now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M")

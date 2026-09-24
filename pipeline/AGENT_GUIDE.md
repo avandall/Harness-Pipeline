@@ -37,6 +37,7 @@ When documentation or instructions conflict, apply the following strict hierarch
 | Check Active Task & Environment Context | `pipeline/docs/runtime/CURRENT_TASK.md`, `pipeline/docs/context/TECH_CONTEXT.md` |
 | View / Update Task Backlog | `pipeline/docs/context/Tasks_list.md` |
 | Create / Update Task Plan (2-4 atomic steps) | `pipeline/docs/runtime/PLAN.md` |
+| Record Architectural Decisions & Reasoning | `pipeline/docs/runtime/DECISIONS_LOG.md` |
 | Run Deterministic Quality Verification (Tier 1) | `python3 pipeline/scripts/verify.py` (`pipeline/presets/active_preset.yaml`) |
 | Check Exit Codes & Termination Strategy | `pipeline/docs/core/EXIT_CODES.md` |
 | Cognitive Review & Debate Log (Tier 2) | `pipeline/docs/runtime/DEBATE_LOG.md`, `pipeline/docs/core/REVIEWER_PROMPT_TEMPLATE.md` |
@@ -47,15 +48,16 @@ When documentation or instructions conflict, apply the following strict hierarch
 
 ---
 
-## 5. Non-Negotiables (10 Inviolable Rules)
-1. **Memory on Disk:** Keep state in `STATUS.md`, `PLAN.md`, `PROGRESS_LOG.md`. Never rely on chat memory.
-2. **Atomic Steps & Logical Units (Mẹo 14):** Thực thi theo Cụm Logic (Shared foundations, DB models, reusable components trước; ráp API/view sau). Không làm tuần tự theo danh sách ngẫu nhiên.
-3. **Deterministic Verification:** Must pass `verify.py` 100% before marking any task complete. Run `python3 pipeline/scripts/verify.py` synchronously in foreground (NEVER launch as a background task). Use `--quick` or `--test-target tests/test_xxx.py` during rapid iteration to avoid CLI print timeouts.
-4. **Proof Over Promise:** Observable evidence (test output, diff) is required for every claim.
-5. **Strict Scope & Path Integrity:** Never touch files outside `BOUNDARIES.md` or modify `.env`. All absolute file links and paths must anchor dynamically to the current active workspace root, never hardcoded legacy or stale template paths.
-6. **1 Task = 1 Professional Commit:** Git commit ONLY when task is `[x] DONE`. Commit messages must be structured, detailed, and professional (`[TASK-ID] <type>(<scope>): <title>` with Summary, Key Changes, and Verification). Never commit intermediate iterations or superficial one-liners.
-7. **Overnight Non-Blocking:** If stuck after 2 attempts, write `BLOCKERS/<TASK_ID>.md`, mark `[!] BLOCKED`, continue to next task.
-8. **No Silent Patches:** Fix the underlying instructions/tests, not just code by hand.
-9. **Quota Limit Backoff, Context & Timeout Protection:** Keep turns focused and bounded with explicit timeouts. If API rate limits or quota resets occur (e.g. `Individual quota reached` / 429), apply exponential backoff and prefer targeted verification (`--quick` / `--test-target`) to conserve quota. Execute validation scripts synchronously in foreground; never offload verification runs to background jobs. If chat auto-compacts or commands time out, stop and re-narrow task scope.
-10. **Clean Working Tree:** Dọn sạch scratch files và để lại working tree sạch sẽ.
-11. **Dependency & Environment Hygiene:** Never run global `pip install`. Always declare dependencies in `pyproject.toml` or `requirements.txt`. Virtual environment (`.venv`) is synced automatically via `uv`. Never commit `.venv/` or introduce phantom imports.
+## 5. Non-Negotiables (Core Inviolable Rules)
+1. **Memory on Disk & Architectural Decisions:** Keep state in `STATUS.md`, `PLAN.md`, `PROGRESS_LOG.md`. When making architectural, data model, or algorithmic choices, record the reasoning into `DECISIONS_LOG.md` to bridge memory across fresh Ralph Loop sessions.
+2. **Anti-Cheat & No Fake Mocks:** Banned trivial shortcuts, `assert True`, dummy stubs (`return True # TODO`), and fake mocks designed only to pass tests without real business logic. All implementations must be genuine, solid, and verifiable.
+3. **Atomic Steps & Logical Units (Mẹo 14):** Thực thi theo Cụm Logic (Shared foundations, DB models, reusable components trước; ráp API/view sau). Không làm tuần tự theo danh sách ngẫu nhiên.
+4. **Deterministic Verification:** Must pass `verify.py` 100% before marking any task complete. Run `python3 pipeline/scripts/verify.py` synchronously in foreground (NEVER launch as a background task). Use `--quick` or `--test-target tests/test_xxx.py` during rapid iteration to avoid CLI print timeouts.
+5. **Proof Over Promise:** Observable evidence (test output, diff) is required for every claim.
+6. **Strict Scope & Path Integrity:** Never touch files outside `BOUNDARIES.md` or modify `.env`. All absolute file links and paths must anchor dynamically to the current active workspace root, never hardcoded legacy or stale template paths.
+7. **1 Task = 1 Professional Commit:** Git commit ONLY when task is `[x] DONE`. Commit messages must be structured, detailed, and professional (`[TASK-ID] <type>(<scope>): <title>` with Summary, Key Changes, and Verification). Never commit intermediate iterations or superficial one-liners.
+8. **Overnight Non-Blocking:** If stuck after 2 attempts, write `BLOCKERS/<TASK_ID>.md`, mark `[!] BLOCKED`, continue to next task.
+9. **No Silent Patches:** Fix the underlying instructions/tests, not just code by hand.
+10. **Quota Limit Backoff, Context & Timeout Protection:** Keep turns focused and bounded with explicit timeouts. If API rate limits or quota resets occur (e.g. `Individual quota reached` / 429), apply exponential backoff and prefer targeted verification (`--quick` / `--test-target`) to conserve quota. Execute validation scripts synchronously in foreground; never offload verification runs to background jobs. If chat auto-compacts or commands time out, stop and re-narrow task scope.
+11. **Clean Working Tree:** Dọn sạch scratch files và để lại working tree sạch sẽ.
+12. **Dependency & Environment Hygiene:** Never run global `pip install`. Always declare dependencies in `pyproject.toml` or `requirements.txt`. Virtual environment (`.venv`) is synced automatically via `uv`. Never commit `.venv/` or introduce phantom imports.

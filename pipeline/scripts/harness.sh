@@ -259,6 +259,39 @@ ${task_spec}
 EOF
 }
 
+get_memory_bridge() {
+  local bridge=""
+  local progress_file="${RUNTIME_DIR}/PROGRESS_LOG.md"
+  local decisions_file="${RUNTIME_DIR}/DECISIONS_LOG.md"
+  local plan_file="${RUNTIME_DIR}/PLAN.md"
+
+  if [[ -f "$decisions_file" ]]; then
+    local dec_lines
+    dec_lines=$(grep -v "^#" "$decisions_file" 2>/dev/null | grep -v "^>" | grep -v "^---" | grep -v "^<!--" | grep -v "^-->" | grep -v "^[[:space:]]*$" | tail -n 15 || true)
+    if [[ -n "$dec_lines" ]]; then
+      bridge+="Recent Architecture Decisions (DECISIONS_LOG.md):\n${dec_lines}\n\n"
+    fi
+  fi
+
+  if [[ -f "$progress_file" ]]; then
+    local prog_lines
+    prog_lines=$(grep -v "^#" "$progress_file" 2>/dev/null | grep -v "^>" | grep -v "^[[:space:]]*$" | tail -n 15 || true)
+    if [[ -n "$prog_lines" ]]; then
+      bridge+="Recent Progress History (PROGRESS_LOG.md):\n${prog_lines}\n\n"
+    fi
+  fi
+
+  if [[ -f "$plan_file" ]]; then
+    local plan_steps
+    plan_steps=$(grep -E "^[[:space:]]*- \[[ x/]\]" "$plan_file" 2>/dev/null | head -n 10 || true)
+    if [[ -n "$plan_steps" ]]; then
+      bridge+="Active Plan Steps (PLAN.md):\n${plan_steps}\n"
+    fi
+  fi
+
+  echo -e "$bridge"
+}
+
 _build_executor_payload() {
   local active_task="$1"
   local task_spec="$2"
@@ -268,16 +301,24 @@ _build_executor_payload() {
   tech_summary=$(get_tech_context_summary)
   local bound_summary
   bound_summary=$(get_boundaries_summary)
+  local mem_bridge
+  mem_bridge=$(get_memory_bridge)
 
   sync_current_task_doc "$active_task" "$task_spec"
 
   cat <<EOF
 [${role_tag} — TASK-BOUND SESSION — TARGET: ${active_task}]
 
-=== 📜 10 ĐIỀU LUẬT CỐT LÕI (AGENT_GUIDE.md) ===
-1. State on disk (STATUS.md/PLAN.md). 2. Atomic steps & Logical units. 3. Verify pass before done (chạy 'python3 pipeline/scripts/verify.py' đồng bộ foreground, KHÔNG chạy ngầm background). 4. Proof over promise. 5. Inspect file before edit & Dynamic path anchoring. 6. Scope boundary. 7. 1 Task = 1 Professional Commit ([x] DONE, commit chi tiết chuyên nghiệp: Title + Summary + Key Changes + Verification, tuyệt đối không commit một dòng sơ sài). 8. Overnight Non-blocking BLOCKED. 9. Context & Timeout protection. 10. Clean working tree.
+=== 📜 QUY TẮC CỐT LÕI (Condensed Agent Constitution) ===
+1. 🛡️ ANTI-CHEAT & NO FAKE MOCKS: Tuyệt đối KHÔNG mock dữ liệu giả, KHÔNG hardcode return giá trị ảo để qua test, KHÔNG dùng 'assert True' hay cheat verify.py. Phải implement logic thật 100%.
+2. 🧠 STATE & DECISION ON DISK: Cập nhật STATUS.md, PLAN.md, PROGRESS_LOG.md liên tục. Khi chọn phương án kỹ thuật/kiến trúc, ghi nhận lý do ngắn gọn vào DECISIONS_LOG.md để lưu giữ Memory Bridge xuyên suốt các phiên.
+3. ⚡ DETERMINISTIC VERIFICATION: Chạy 'python3 pipeline/scripts/verify.py' đồng bộ foreground sau mỗi bước (dùng --quick để lặp nhanh). Phải đạt 100% PASS thật.
+4. 🧱 SCOPE BOUNDARY & NO SILENT PATCH: Chỉ sửa files trong BOUNDARIES.md. Không chạm .env. Sửa triệt để root cause, không vá tạm bợ.
+5. 🎯 1 TASK = 1 COMMIT CHUYÊN NGHIỆP: Khi xong [x] DONE, Harness sẽ tự động commit đầy đủ Title, Summary, Key Changes, Verification. Tuyệt đối không commit dở dang.
+6. 🛑 BẾ TẮC (OVERNIGHT NON-BLOCKING): Nếu thử 2 lần không qua verify.py -> Dừng lại, ghi chi tiết lỗi vào BLOCKERS/${active_task}.md, đổi task thành [!] BLOCKED để loop tiếp tục sang task khác mà không bị treo.
 $([ -n "$complexity_notice" ] && echo -e "\n=== ⚠️ CHỈ THỊ CHIA NHỎ ATOMIC (COMPLEXITY GUARD) ===\n${complexity_notice}")
 
+$([ -n "$mem_bridge" ] && echo -e "=== 🧠 MEMORY BRIDGE (Ngữ cảnh tích lũy từ các phiên trước) ===\n${mem_bridge}")
 === 🎯 THÔNG TIN TASK SPEC (TRÍCH XUẤT TỪ Tasks_list.md) ===
 ${task_spec}
 
@@ -289,9 +330,10 @@ ${task_spec}
 Thực thi trọn vẹn Task ${active_task} trong phiên làm việc này:
 1. Đọc/Tạo pipeline/docs/runtime/PLAN.md cho ${active_task} (chia thành 2-4 atomic steps).
 2. Thực thi tuần tự từng bước: Sửa code trong scope ──► Chạy 'python3 pipeline/scripts/verify.py' trực tiếp foreground (có thể dùng --quick hoặc --test-target để rút ngắn thời gian).
-3. Sửa ngay nếu VERIFICATION_REPORT báo lỗi cho đến khi PASS 100%.
-4. Cập nhật tiến độ liên tục vào STATUS.md, PROGRESS_LOG.md và PLAN.md ra filesystem.
-5. Khi ${active_task} đã xong 100% và verify PASS: Đánh dấu [x] DONE dòng ${active_task} trong Tasks_list.md và DỪNG PHIÊN (Harness sẽ tự động tạo commit chuyên nghiệp chi tiết gồm Summary, Key Changes, Verification).
+3. Nếu đưa ra quyết định kiến trúc quan trọng: Append 3-5 dòng vào DECISIONS_LOG.md.
+4. Sửa ngay nếu VERIFICATION_REPORT báo lỗi cho đến khi PASS 100% (KHÔNG cheat test, KHÔNG mock qua mặt linter/test).
+5. Cập nhật tiến độ liên tục vào STATUS.md, PROGRESS_LOG.md và PLAN.md ra filesystem.
+6. Khi ${active_task} đã xong 100% và verify PASS: Đánh dấu [x] DONE dòng ${active_task} trong Tasks_list.md và DỪNG PHIÊN (Harness sẽ tự động tạo commit chuyên nghiệp chi tiết gồm Summary, Key Changes, Verification).
 
 ⚠️ KHÔNG COMMIT TRUNG GIAN. TUYỆT ĐỐI KHÔNG COMMIT 1 DÒNG SƠ SÀI.
 NẾU BỊ KẸT (sửa 2 lần không qua verify.py): Dừng lại, viết report vào BLOCKERS/${active_task}.md và đổi task thành [!] BLOCKED.

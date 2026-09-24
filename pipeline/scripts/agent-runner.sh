@@ -15,7 +15,7 @@ MODEL=""
 EFFORT=""
 ROOT_DIR="$(pwd)"
 RAW_TIMEOUT="${PRINT_TIMEOUT:-15m0s}"
-STALL_TIMEOUT="${RALPH_STALL_TIMEOUT:-180}"    # 3 minutes of zero output = stall
+STALL_TIMEOUT="${RALPH_STALL_TIMEOUT:-300}"    # 5 minutes of zero output = stall (allows deep reading & thinking)
 EXTENSION_STEP="${RALPH_EXTENSION:-300}"        # +5 minutes extension per dynamic budgeting step
 MAX_TIMEOUT="${RALPH_MAX_TIMEOUT:-1800}"        # 30 minutes hard maximum ceiling
 
