@@ -107,38 +107,30 @@ def get_active_preset(cli_preset: str) -> str:
 
 
 def run_python_checks(
-    target_dir: str = ".", quick: bool = False, test_target: str = ""
+    target_dir: str = ".", quick: bool = False, test_target: str = "", tier: int = 2
 ) -> list[tuple[str, bool, str]]:
-    """Chạy bộ kiểm tra chuẩn cho dự án Python: Ruff, Mypy, Bandit, Pytest."""
+    """Chạy bộ kiểm tra chuẩn cho dự án Python theo Tier (0, 1, 2)."""
     results = []
 
-    # 1. Ruff (Lint)
+    # 1. Ruff (Lint) - Luôn chạy cho Tier 0, 1, 2
     if check_tool_installed("ruff"):
         code, out = run_command(["ruff", "check", target_dir])
         results.append(("Python: Ruff (Lint)", code == 0, "All lint checks passed ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Ruff (Lint)", True, "Skipped (ruff not installed)"))
 
-    # 2. Mypy (Type Check)
+    # 2. Mypy (Type Check) - Luôn chạy cho Tier 0, 1, 2
     if check_tool_installed("mypy"):
         code, out = run_command(["mypy", target_dir, "--ignore-missing-imports", "--explicit-package-bases"])
         results.append(("Python: Mypy (Type Check)", code == 0, "Type checking passed ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Mypy (Type Check)", True, "Skipped (mypy not installed)"))
 
-    # 3. Bandit (Security) - skipped in quick mode
-    if quick:
-        results.append(("Python: Bandit (Security)", True, "Skipped (quick mode enabled)"))
-    elif check_tool_installed("bandit"):
-        bandit_cmd = ["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
-        if os.path.exists(".bandit"):
-            bandit_cmd = ["bandit", "-c", ".bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
-        code, out = run_command(bandit_cmd)
-        results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
-    else:
-        results.append(("Python: Bandit (Security)", True, "Skipped (bandit not installed)"))
+    # Tier 0 dừng ở Lint & Type Check (tức thì < 2s)
+    if tier == 0:
+        return results
 
-    # 4. Pytest (Runtime)
+    # 3. Pytest (Runtime) - Chạy ở Tier 1 và Tier 2
     if check_tool_installed("pytest"):
         has_tests = (
             bool(test_target)
@@ -148,10 +140,13 @@ def run_python_checks(
             or os.path.exists("pipeline/tests")
         )
         if has_tests:
+            # Ở Tier 1: ưu tiên chạy nhanh (--tb=short -q -x --lf nếu có)
             pytest_cmd = ["pytest", "--tb=short", "-q"]
+            if tier == 1:
+                pytest_cmd.append("-x")  # Dừng ngay ở lỗi đầu tiên để feedback lặp nhanh
             if test_target:
                 pytest_cmd.append(test_target)
-            timeout_sec = 60 if test_target else 300
+            timeout_sec = 60 if test_target or tier == 1 else 300
             code, out = run_command(pytest_cmd, timeout=timeout_sec)
             results.append(("Python: Pytest (Runtime)", code == 0, "All unit tests passed ✓" if code == 0 else truncate_log(out)))
         else:
@@ -159,33 +154,49 @@ def run_python_checks(
     else:
         results.append(("Python: Pytest (Runtime)", True, "Skipped (pytest not installed)"))
 
+    # Tier 1 dừng ở Unit Test, bỏ qua Security Scan nặng
+    if tier == 1 or quick:
+        results.append(("Python: Bandit (Security)", True, "Skipped (quick/tier-1 mode enabled)"))
+        return results
+
+    # 4. Bandit (Security) - Chỉ chạy ở Tier 2 (Full regression & security)
+    if check_tool_installed("bandit"):
+        bandit_cmd = ["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+        if os.path.exists(".bandit"):
+            bandit_cmd = ["bandit", "-c", ".bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+        code, out = run_command(bandit_cmd)
+        results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
+    else:
+        results.append(("Python: Bandit (Security)", True, "Skipped (bandit not installed)"))
+
     return results
 
 
-def run_node_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
-    """Chạy bộ kiểm tra cho dự án Node.js / TypeScript / React."""
+def run_node_checks(target_dir: str = ".", tier: int = 2) -> list[tuple[str, bool, str]]:
+    """Chạy bộ kiểm tra cho dự án Node.js / TypeScript / React theo Tier."""
     results = []
     has_package_json = os.path.exists("package.json") or os.path.exists(os.path.join(target_dir, "package.json"))
     if not has_package_json:
         return [("Node.js Check", True, "Skipped (no package.json found)")]
 
     if check_tool_installed("npm"):
-        # Type check TypeScript
+        # Type check TypeScript (Tier 0, 1, 2)
         if os.path.exists("tsconfig.json") or os.path.exists(os.path.join(target_dir, "tsconfig.json")):
             code, out = run_command(["npm", "run", "typecheck"])
             if code != 0 and check_tool_installed("npx"):
                 code, out = run_command(["npx", "--no-install", "tsc", "--noEmit"])
             results.append(("Node: TypeScript (Type Check)", code == 0, "TS type checking passed ✓" if code == 0 else truncate_log(out)))
 
-        # Node Unit Tests (Vitest / Jest / Test script)
-        code, out = run_command(["npm", "test"])
-        results.append(("Node: Vitest / Unit Tests", code == 0, "Node unit tests passed ✓" if code == 0 else truncate_log(out)))
+        if tier > 0:
+            # Node Unit Tests (Tier 1 & Tier 2)
+            code, out = run_command(["npm", "test"])
+            results.append(("Node: Vitest / Unit Tests", code == 0, "Node unit tests passed ✓" if code == 0 else truncate_log(out)))
 
     return results if results else [("Node.js Check", True, "Node environment ready ✓")]
 
 
-def run_go_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
-    """Chạy bộ kiểm tra cho dự án Go."""
+def run_go_checks(target_dir: str = ".", tier: int = 2) -> list[tuple[str, bool, str]]:
+    """Chạy bộ kiểm tra cho dự án Go theo Tier."""
     results = []
     if not os.path.exists(os.path.join(target_dir, "go.mod")):
         return [("Go Check", True, "Skipped (no go.mod found)")]
@@ -194,8 +205,9 @@ def run_go_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
         code, out = run_command(["go", "vet", "./..."])
         results.append(("Go: Vet", code == 0, "Go vet passed ✓" if code == 0 else truncate_log(out)))
 
-        code, out = run_command(["go", "test", "-v", "./..."])
-        results.append(("Go: Tests", code == 0, "Go tests passed ✓" if code == 0 else truncate_log(out)))
+        if tier > 0:
+            code, out = run_command(["go", "test", "-v", "./..."])
+            results.append(("Go: Tests", code == 0, "Go tests passed ✓" if code == 0 else truncate_log(out)))
 
     return results if results else [("Go Check", True, "Go checks passed ✓")]
 
@@ -307,13 +319,20 @@ def main():
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Quick verification mode (skip slow security scanning during rapid iterative coding)",
+        help="Quick verification mode (alias for --tier 1: skips slow security scan)",
+    )
+    parser.add_argument(
+        "--tier",
+        type=int,
+        choices=[0, 1, 2],
+        default=None,
+        help="Verification tier: 0 (Lint/Type only <2s), 1 (Unit tests & fast check <10s), 2 (Full regression & security 1-3m)",
     )
     parser.add_argument(
         "--test-target",
         type=str,
         default="",
-        help="Specific test file or directory to run for pytest (e.g. tests/test_e2e_conversational_system.py)",
+        help="Specific test file or directory to run for pytest (e.g. tests/test_auth.py)",
     )
     parser.add_argument(
         "--preset",
@@ -323,28 +342,42 @@ def main():
     )
     args = parser.parse_args()
 
+    # Determine effective test target (CLI flag first, fallback to RALPH_TEST_TARGET env)
+    effective_test_target = args.test_target.strip() if args.test_target else os.environ.get("RALPH_TEST_TARGET", "").strip()
+    if effective_test_target and effective_test_target.lower() in ["-", "none", "static_check"]:
+        effective_test_target = ""
+
+    # Determine effective tier (backward compatible with --quick)
+    if args.tier is not None:
+        effective_tier = args.tier
+    elif args.quick:
+        effective_tier = 1
+    else:
+        effective_tier = 2
+
     preset = get_active_preset(args.preset)
 
     check_results: list[tuple[str, bool, str]] = []
 
     if preset == "node_react":
-        check_results.extend(run_node_checks("."))
+        check_results.extend(run_node_checks(".", tier=effective_tier))
     elif preset == "go_backend":
-        check_results.extend(run_go_checks("."))
+        check_results.extend(run_go_checks(".", tier=effective_tier))
     elif preset == "generic_scripting":
         check_results.extend(run_shell_checks("."))
     elif preset in ["polyglot_multi", "auto"]:
         # Auto-detect all present language environments & run combined checks
-        check_results.extend(run_python_checks(".", quick=args.quick, test_target=args.test_target))
+        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier))
         if os.path.exists("package.json"):
-            check_results.extend(run_node_checks("."))
+            check_results.extend(run_node_checks(".", tier=effective_tier))
         if os.path.exists("go.mod"):
-            check_results.extend(run_go_checks("."))
+            check_results.extend(run_go_checks(".", tier=effective_tier))
     else:  # Default: python_backend
-        check_results.extend(run_python_checks(".", quick=args.quick, test_target=args.test_target))
+        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier))
 
-    # Universal check: Quality & Anti-Cheat Guard across all presets
-    check_results.extend(run_anti_cheat_checks("."))
+    # Universal check: Quality & Anti-Cheat Guard across all presets (chạy từ Tier 1 trở lên)
+    if effective_tier > 0:
+        check_results.extend(run_anti_cheat_checks("."))
 
     all_passed = all(r[1] for r in check_results)
     now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M")
@@ -353,10 +386,10 @@ def main():
     if args.summary:
         failed = [name for name, passed, _ in check_results if not passed]
         if all_passed:
-            print(f"TIER1: PASS ({now}) [{preset}] — All deterministic checks green ✅")
+            print(f"TIER{effective_tier}: PASS ({now}) [{preset}] — Deterministic checks green ✅")
         else:
             fail_str = ", ".join(failed)
-            print(f"TIER1: FAIL ({now}) [{preset}] — Failed checks: {fail_str} ❌")
+            print(f"TIER{effective_tier}: FAIL ({now}) [{preset}] — Failed checks: {fail_str} ❌")
         sys.exit(0 if all_passed else 1)
 
     # ── Full mode: write VERIFICATION_REPORT.md ──────────────────────────────
@@ -366,12 +399,13 @@ def main():
     report_path = docs_runtime / "VERIFICATION_REPORT.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"🔍 Running Tier 1 Verification Checks (Preset: {preset})...")
+    print(f"🔍 Running Tier {effective_tier} Verification Checks (Preset: {preset})...")
 
     report_lines = [
-        "# TIER 1 VERIFICATION REPORT",
+        f"# TIER {effective_tier} VERIFICATION REPORT",
         f"Generated: {now}",
         f"Active Preset: {preset}",
+        f"Verification Tier: Tier {effective_tier}",
         f"Status: {'PASS' if all_passed else 'FAIL'}",
         "",
         "## Summary",
@@ -399,11 +433,11 @@ def main():
 
     if not all_passed:
         print(
-            "❌ Tier 1 Verification Failed! See VERIFICATION_REPORT.md for details."
+            f"❌ Tier {effective_tier} Verification Failed! See VERIFICATION_REPORT.md for details."
         )
         sys.exit(1)
     else:
-        print("✅ Tier 1 Verification Passed 100%!")
+        print(f"✅ Tier {effective_tier} Verification Passed 100%!")
         sys.exit(0)
 
 

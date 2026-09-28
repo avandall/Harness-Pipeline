@@ -144,8 +144,55 @@ restore_context() {
   return 1
 }
 
+validate_tasks_spec() {
+  local tasks_file="${1:-$CONTEXT_DIR/Tasks_list.md}"
+  if [[ ! -f "$tasks_file" ]]; then
+    echo "❌ [PLAN] Tasks file not found at $tasks_file"
+    return 1
+  fi
+
+  local errors=0
+  local task_count=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^\|[[:space:]]*\`?(TASK-[A-Za-z0-9_-]+)\`?[[:space:]]*\| ]]; then
+      task_count=$((task_count + 1))
+      local task_id="${BASH_REMATCH[1]}"
+      local target_files
+      target_files="$(echo "$line" | awk -F'|' '{print $4}' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      local test_target
+      test_target="$(echo "$line" | awk -F'|' '{print $5}' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+      if [[ -z "$target_files" || "$target_files" == "-" ]]; then
+        echo "❌ [PLAN-CHECK] Task ${task_id}: Missing 'Target Files / Dirs' (column 4)!"
+        errors=$((errors + 1))
+      fi
+
+      if [[ -z "$test_target" || "$test_target" == "-" ]]; then
+        echo "❌ [PLAN-CHECK] Task ${task_id}: Missing 'Test Target' (column 5)!"
+        echo "   👉 Please specify test file (e.g. tests/unit/test_xxx.py) or 'static_check'."
+        errors=$((errors + 1))
+      fi
+    fi
+  done < "$tasks_file"
+
+  if [[ $task_count -eq 0 ]]; then
+    echo "⚠️ [PLAN-CHECK] No tasks found in $tasks_file"
+    return 1
+  fi
+
+  if [[ $errors -gt 0 ]]; then
+    echo "❌ [PLAN-CHECK] Tasks_list.md validation failed with $errors error(s)."
+    return 1
+  fi
+
+  echo "✅ [PLAN-CHECK] Tasks_list.md validation passed ($task_count tasks verified) ✓"
+  return 0
+}
+
 case "${1:-seal}" in
   seal)
+    validate_tasks_spec "$CONTEXT_DIR/Tasks_list.md"
     SEAL_HASH="$(compute_seal)"
     echo "$SEAL_HASH" > "$SEAL_FILE"
     CURRENT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo "")"
@@ -154,7 +201,11 @@ case "${1:-seal}" in
     fi
     echo "🔒 [PLAN] Context specifications sealed with SHA-256: ${SEAL_HASH:0:16}..."
     ;;
+  validate|check-tasks)
+    validate_tasks_spec "${2:-$CONTEXT_DIR/Tasks_list.md}"
+    ;;
   check)
+    validate_tasks_spec "${2:-$CONTEXT_DIR/Tasks_list.md}"
     if [[ ! -f "$SEAL_FILE" ]]; then
       echo "⚠️ [PLAN] No seal file found at $SEAL_FILE (Unsealed Plan)."
       exit 0
@@ -180,7 +231,7 @@ case "${1:-seal}" in
     exec "$ROOT/scripts/plan-refine.sh" "$@"
     ;;
   *)
-    echo "Usage: scripts/plan.sh [seal|check|restore|refine]"
+    echo "Usage: scripts/plan.sh [seal|check|validate|restore|refine]"
     exit 1
     ;;
 esac

@@ -46,6 +46,11 @@ REVIEW_TIMEOUT="5m0s"
 REVIEW_EFFORT="${RALPH_REVIEW_EFFORT:-medium}"
 REVIEW_MAX_RETRIES=2
 AUTO_CLEAN_DIRTY="${RALPH_AUTO_CLEAN:-true}"
+PARALLEL_MODE=false
+PARALLEL_WORKERS="${RALPH_MAX_WORKERS:-3}"
+FIX_BUG_TARGET=""
+declare -a ACTIVE_WORKTREES=()
+declare -a ACTIVE_BRANCHES=()
 
 # Colors
 RED='\033[0;31m'
@@ -56,12 +61,33 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 BOLD='\033[1m'
 
-# Run-scoped logging & cleanup
-mkdir -p "${PIPELINE_DIR}/.ralph/runs"
-RUN_ID="$(date +%Y%m%d-%H%M%S)"
-RUN_DIR="${PIPELINE_DIR}/.ralph/runs/${RUN_ID}"
-mkdir -p "$RUN_DIR" "$ITERATIONS_DIR" "$BLOCKERS_DIR"
-export RALPH_RUN_TAG="ralph-managed-run-${RUN_ID}"
+# ────────────────────────────────────────────────────────────────────────────
+# Pillar 2: Run-Scoped Ephemeral vs Durable Global Memory Lifecycle
+# ────────────────────────────────────────────────────────────────────────────
+init_run_lifecycle() {
+  RUN_ID="$(date +%Y%m%d-%H%M%S)"
+  RUN_DIR="${RUNTIME_DIR}/runs/${RUN_ID}"
+  export RALPH_RUN_TAG="ralph-managed-run-${RUN_ID}"
+  export RUN_ID
+  export RUN_DIR
+
+  mkdir -p "${PIPELINE_DIR}/.ralph/runs/${RUN_ID}" "$RUN_DIR/plans" "$RUN_DIR/contracts" "$RUN_DIR/debates" "$ITERATIONS_DIR" "$BLOCKERS_DIR" "${PIPELINE_DIR}/.ralph/locks"
+
+  # Manage Symlinks: CURRENT -> current run, PREV -> previous run
+  local prev_run
+  prev_run=$(readlink "${RUNTIME_DIR}/CURRENT" 2>/dev/null || echo "")
+  if [[ -n "$prev_run" && -d "$prev_run" ]]; then
+    ln -sfn "$prev_run" "${RUNTIME_DIR}/PREV"
+  fi
+  ln -sfn "$RUN_DIR" "${RUNTIME_DIR}/CURRENT"
+
+  # Durable global memory files (preserved across runs)
+  touch "${RUNTIME_DIR}/DECISIONS_LOG.md"
+  touch "${RUNTIME_DIR}/LEARNINGS.md"
+  touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
+}
+init_run_lifecycle
+
 _EXTRA_PY_PATHS="."
 [[ -d "${PIPELINE_DIR}/../src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:./src"
 [[ -d "${PIPELINE_DIR}/../app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:./app"
@@ -72,7 +98,13 @@ reap_orphans() {
 }
 
 cleanup_on_interrupt() {
-  echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Cleaning up active processes...${NC}"
+  echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Cleaning up active worktrees & processes...${NC}"
+  for wt in "${ACTIVE_WORKTREES[@]}"; do
+    git worktree remove --force "$wt" 2>/dev/null || true
+  done
+  for br in "${ACTIVE_BRANCHES[@]}"; do
+    git branch -D "$br" 2>/dev/null || true
+  done
   reap_orphans
   exit 130
 }
@@ -85,6 +117,101 @@ log_ok()      { echo -e "${GREEN}[OK]${NC}    $*"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 log_section() { echo -e "\n${BOLD}${CYAN}═══ $* ═══${NC}"; }
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pillar 1: Concurrency Locks & Solution B Adaptive Integration Lock
+# ────────────────────────────────────────────────────────────────────────────
+safe_update_task_status() {
+  local task_id="$1"
+  local new_status="$2"
+  local tasks_file="${CONTEXT_DIR}/Tasks_list.md"
+  local lock_file="${PIPELINE_DIR}/.ralph/locks/tasks_list.lock"
+  mkdir -p "$(dirname "$lock_file")"
+
+  if [[ ! -f "$tasks_file" ]]; then
+    log_warn "Tasks file not found at $tasks_file"
+    return 1
+  fi
+
+  local clean_status
+  clean_status="$(echo "$new_status" | tr -d '`')"
+
+  (
+    flock -x -w 30 200 || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
+    # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
+    sed -i -E "s/(\|[[:space:]]*\`?${task_id}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
+    # 2. Update task detail metadata block if present
+    sed -i -E "/^### 📌 (.*)${task_id}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
+  ) 200>"$lock_file"
+}
+
+safe_append_durable_log() {
+  local log_file="$1"
+  local content="$2"
+  local worker_tag="[Worker ${RALPH_WORKER_ID:-1} | Task ${RALPH_ACTIVE_TASK:-CORE}]"
+  local lock_file="${PIPELINE_DIR}/.ralph/locks/durable_log.lock"
+  mkdir -p "$(dirname "$lock_file")"
+
+  (
+    flock -x -w 30 201 || { log_error "Lock timeout (30s) appending to durable log $log_file"; return 1; }
+    echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
+  ) 201>"$lock_file"
+}
+
+wait_and_acquire_merge_lock() {
+  local lock_file="${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
+  local max_total_wait="${RALPH_MERGE_MAX_WAIT:-900}" # 15 minutes max
+  local interval=50
+  local elapsed=0
+  mkdir -p "$(dirname "$lock_file")"
+
+  log_info "[MERGE-QUEUE] Acquiring integration merge lock (Solution B adaptive)..."
+
+  while (( elapsed < max_total_wait )); do
+    if flock -x -w "$interval" 202; then
+      return 0
+    fi
+    elapsed=$(( elapsed + interval ))
+
+    # Lock acquisition timed out for this interval, inspect holder PID
+    local holder_pid=""
+    if command -v fuser >/dev/null 2>&1; then
+      holder_pid=$(fuser "$lock_file" 2>/dev/null | awk '{print $1}' || echo "")
+    elif command -v lsof >/dev/null 2>&1; then
+      holder_pid=$(lsof -t "$lock_file" 2>/dev/null | head -n 1 || echo "")
+    fi
+
+    if [[ -n "$holder_pid" ]]; then
+      if kill -0 "$holder_pid" 2>/dev/null; then
+        log_info "[MERGE-QUEUE] Lock held by active PID $holder_pid (running Tier 2 integration tests). Waiting... (${elapsed}/${max_total_wait}s)"
+      else
+        log_warn "[MERGE-QUEUE] Stale lock detected! Holder PID $holder_pid is dead. Cleaning stale lock..."
+        rm -f "$lock_file"
+      fi
+    else
+      log_warn "[MERGE-QUEUE] Lock file exists but no active PID found. Retrying... (${elapsed}/${max_total_wait}s)"
+    fi
+  done
+
+  log_error "[MERGE-QUEUE] DEADLOCK: Merge lock acquisition timed out after ${max_total_wait}s!"
+  return 1
+}
+
+get_test_target_from_table() {
+  local tid="$1"
+  local tasks_file="${CONTEXT_DIR}/Tasks_list.md"
+  if [[ ! -f "$tasks_file" || -z "$tid" ]]; then
+    echo ""
+    return
+  fi
+  local target
+  target=$(awk -F'|' -v tid="$tid" '$0 ~ tid { print $5 }' "$tasks_file" | head -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^`//' -e 's/`$//')
+  if [[ "$target" == "-" || "$target" == "none" || "$target" == "static_check" ]]; then
+    echo ""
+  else
+    echo "$target"
+  fi
+}
 
 # ────────────────────────────────────────────────────────────────────────────
 # Task Filter & Pruning Helpers
@@ -312,10 +439,17 @@ _build_executor_payload() {
 === 📜 QUY TẮC CỐT LÕI (Condensed Agent Constitution) ===
 1. 🛡️ ANTI-CHEAT & NO FAKE MOCKS: Tuyệt đối KHÔNG mock dữ liệu giả, KHÔNG hardcode return giá trị ảo để qua test, KHÔNG dùng 'assert True' hay cheat verify.py. Phải implement logic thật 100%.
 2. 🧠 STATE & DECISION ON DISK: Cập nhật STATUS.md, PLAN.md, PROGRESS_LOG.md liên tục. Khi chọn phương án kỹ thuật/kiến trúc, ghi nhận lý do ngắn gọn vào DECISIONS_LOG.md để lưu giữ Memory Bridge xuyên suốt các phiên.
-3. ⚡ DETERMINISTIC VERIFICATION: Chạy 'python3 pipeline/scripts/verify.py' đồng bộ foreground sau mỗi bước (dùng --quick để lặp nhanh). Phải đạt 100% PASS thật.
-4. 🧱 SCOPE BOUNDARY & NO SILENT PATCH: Chỉ sửa files trong BOUNDARIES.md. Không chạm .env. Sửa triệt để root cause, không vá tạm bợ.
-5. 🎯 1 TASK = 1 COMMIT CHUYÊN NGHIỆP: Khi xong [x] DONE, Harness sẽ tự động commit đầy đủ Title, Summary, Key Changes, Verification. Tuyệt đối không commit dở dang.
-6. 🛑 BẾ TẮC (OVERNIGHT NON-BLOCKING): Nếu thử 2 lần không qua verify.py -> Dừng lại, ghi chi tiết lỗi vào BLOCKERS/${active_task}.md, đổi task thành [!] BLOCKED để loop tiếp tục sang task khác mà không bị treo.
+3. ⚡ DETERMINISTIC TIERED VERIFICATION:
+   - Trong quá trình code từng file: Dùng 'python3 pipeline/scripts/verify.py --tier 0' (Lint & Type check tức thì <2s).
+   - Sau mỗi atomic step / viết test: Dùng 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>' (Unit test nhanh <10s).
+   - Khi hoàn thành task: BẮT BUỘC chạy 'python3 pipeline/scripts/verify.py --tier 2' (Toàn bộ test suite & Security Scan) đạt 100% PASS thật.
+4. 🧪 TEST STRATEGY THEO TASK TYPE:
+   - Task 'feature': BẮT BUỘC tạo/cập nhật file test trước (Test Contract Red ➔ Green).
+   - Task 'refactor': Dùng bộ test hiện có làm hàng rào (Regression Guard), KHÔNG duplicate test, không làm giảm số lượng tests pass.
+   - Task 'scaffold'/'setup': Verify cấu trúc files, manifest và lint/typecheck.
+5. 🧱 SCOPE BOUNDARY & NO SILENT PATCH: Chỉ sửa files trong BOUNDARIES.md. Không chạm .env. Sửa triệt để root cause, không vá tạm bợ.
+6. 🎯 1 TASK = 1 COMMIT CHUYÊN NGHIỆP: Khi xong [x] DONE, Harness sẽ tự động commit đầy đủ Title, Summary, Key Changes, Verification. Tuyệt đối không commit dở dang.
+7. 🛑 BẾ TẮC (OVERNIGHT NON-BLOCKING): Nếu thử 2 lần không qua verify.py -> Dừng lại, ghi chi tiết lỗi vào BLOCKERS/${active_task}.md, đổi task thành [!] BLOCKED để loop tiếp tục sang task khác mà không bị treo.
 $([ -n "$complexity_notice" ] && echo -e "\n=== ⚠️ CHỈ THỊ CHIA NHỎ ATOMIC (COMPLEXITY GUARD) ===\n${complexity_notice}")
 
 $([ -n "$mem_bridge" ] && echo -e "=== 🧠 MEMORY BRIDGE (Ngữ cảnh tích lũy từ các phiên trước) ===\n${mem_bridge}")
@@ -329,15 +463,55 @@ ${task_spec}
 === 🚀 NHIỆM VỤ THỰC THI CHO ${active_task} ===
 Thực thi trọn vẹn Task ${active_task} trong phiên làm việc này:
 1. Đọc/Tạo pipeline/docs/runtime/PLAN.md cho ${active_task} (chia thành 2-4 atomic steps).
-2. Thực thi tuần tự từng bước: Sửa code trong scope ──► Chạy 'python3 pipeline/scripts/verify.py' trực tiếp foreground (có thể dùng --quick hoặc --test-target để rút ngắn thời gian).
-3. Nếu đưa ra quyết định kiến trúc quan trọng: Append 3-5 dòng vào DECISIONS_LOG.md.
-4. Sửa ngay nếu VERIFICATION_REPORT báo lỗi cho đến khi PASS 100% (KHÔNG cheat test, KHÔNG mock qua mặt linter/test).
+2. Kiểm tra Task Type:
+   - Nếu là 'feature': Viết test case/contract trước trong thư mục tests/, chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>' thấy test fail (Red), sau đó mới implement code cho pass (Green).
+   - Nếu là 'refactor': Giữ nguyên bộ test sẵn có, implement tối ưu code và chạy Tier 1 test target.
+3. Thực thi tuần tự từng step: Sửa code trong scope ──► Chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>'.
+4. Trước khi kết thúc task: Chạy full 'python3 pipeline/scripts/verify.py --tier 2' đảm bảo không gây regression cho bất kỳ module nào khác trong toàn dự án.
 5. Cập nhật tiến độ liên tục vào STATUS.md, PROGRESS_LOG.md và PLAN.md ra filesystem.
-6. Khi ${active_task} đã xong 100% và verify PASS: Đánh dấu [x] DONE dòng ${active_task} trong Tasks_list.md và DỪNG PHIÊN (Harness sẽ tự động tạo commit chuyên nghiệp chi tiết gồm Summary, Key Changes, Verification).
+6. Khi ${active_task} đã xong 100% và verify Tier 2 PASS: Đánh dấu [x] DONE dòng ${active_task} trong Tasks_list.md và DỪNG PHIÊN (Harness sẽ tự động tạo commit chuyên nghiệp chi tiết gồm Summary, Key Changes, Verification).
 
 ⚠️ KHÔNG COMMIT TRUNG GIAN. TUYỆT ĐỐI KHÔNG COMMIT 1 DÒNG SƠ SÀI.
 NẾU BỊ KẸT (sửa 2 lần không qua verify.py): Dừng lại, viết report vào BLOCKERS/${active_task}.md và đổi task thành [!] BLOCKED.
 EOF
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pillar 7: Multi-Byte Token Budget Awareness & Proactive Trimming
+# ────────────────────────────────────────────────────────────────────────────
+estimate_tokens_multibyte() {
+  local text="$1"
+  local byte_count
+  byte_count=$(printf "%s" "$text" | wc -c)
+  echo $(( byte_count / 3 ))
+}
+
+_build_executor_payload_safe() {
+  local active_task="$1"
+  local task_spec="$2"
+  local role_tag="${3:-SINGLE-MODEL}"
+  local complexity_notice="${4:-}"
+
+  local raw_payload
+  raw_payload=$(_build_executor_payload "$active_task" "$task_spec" "$role_tag" "$complexity_notice")
+
+  local est_tokens
+  est_tokens=$(estimate_tokens_multibyte "$raw_payload")
+
+  # Safe context threshold: 12,000 tokens for system context
+  if (( est_tokens > 12000 )); then
+    log_warn "⚠️ [TOKEN BUDGET] Prompt size (${est_tokens} tokens) exceeds 12k safe limit. Proactively trimming..."
+
+    local slim_spec
+    slim_spec=$(echo "$task_spec" | head -n 25)
+
+    raw_payload=$(_build_executor_payload "$active_task" "$slim_spec" "$role_tag" "$complexity_notice")
+    local new_est
+    new_est=$(estimate_tokens_multibyte "$raw_payload")
+    log_ok "[TOKEN BUDGET] Prompt proactively trimmed down to ${new_est} tokens."
+  fi
+
+  echo "$raw_payload"
 }
 
 parse_args() {
@@ -354,6 +528,20 @@ parse_args() {
       --provider) PROVIDER_OVERRIDE="$2"; shift 2 ;;
       --stop-on-block) STOP_ON_BLOCK=true; shift ;;
       --no-auto-clean) AUTO_CLEAN_DIRTY=false; shift ;;
+      --parallel|-p)
+        PARALLEL_MODE=true
+        if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then
+          PARALLEL_WORKERS="$2"
+          shift 2
+        else
+          PARALLEL_WORKERS="${RALPH_MAX_WORKERS:-3}"
+          shift
+        fi
+        ;;
+      --fix-bug|--bug)
+        FIX_BUG_TARGET="$2"
+        shift 2
+        ;;
       --dry-run|-d) DRY_RUN=true; shift ;;
       --verbose|-v) VERBOSE=true; shift ;;
       --help|-h) show_help; exit 0 ;;
@@ -373,6 +561,8 @@ ${BOLD}USAGE:${NC}
 ${BOLD}OPTIONS:${NC}
   --max-iter, -n N        Maximum iterations (default: 30)
   --tasks, -t RANGE       Task filter e.g. "1..5", "6,9", "TASK-001"
+  --parallel, -p [NUM]    Run execution waves in parallel using Git Worktrees (default: 3 workers)
+  --fix-bug MSG|FILE      Run isolated Agentless bug fix workflow (reproduce -> fix -> verify)
   --model, -m MODEL       Model for executor agent (e.g. claude-sonnet-4-6, default: \$RALPH_MODEL or provider default)
   --review-model, -r M    Enable Dual-Model cognitive review with model M
   --review-effort EFFORT  Reasoning effort for reviewer (low|medium|high, default: medium)
@@ -622,8 +812,6 @@ check_and_auto_commit_done_task() {
       if grep -A 10 "^### 📌 $target_task" "${CONTEXT_DIR}/Tasks_list.md" 2>/dev/null | grep -q "\[x\] DONE" || \
          grep -E "^\|[[:space:]]*\`${target_task}\`" "${CONTEXT_DIR}/Tasks_list.md" 2>/dev/null | grep -q "\[x\] DONE"; then
         done_task_id="$target_task"
-        # Auto-sync table row if it was still TODO or IN_PROGRESS
-        sed -i -E "s/(\|[[:space:]]*\`${target_task}\`[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\[[ /]\][[:space:]]*(TODO|IN_PROGRESS)/\1 [x] DONE/" "${CONTEXT_DIR}/Tasks_list.md" 2>/dev/null || true
       fi
     fi
 
@@ -636,13 +824,28 @@ check_and_auto_commit_done_task() {
       local latest_commit_msg
       latest_commit_msg=$(git log -1 --pretty=%B 2>/dev/null || echo "")
       if [[ "$latest_commit_msg" != *"[${done_task_id}]"* ]]; then
-        log_info "[${mode_label}] Detected uncommitted changes for completed task [${done_task_id}]. Auto-committing cleanly..."
+        log_info "[${mode_label}] Detected changes for task [${done_task_id}]. Enforcing Hard OS Gate (Tier 2 Verification)..."
+
+        local repo_root
+        repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+        # Hard OS Gate: Verify Tier 2 before committing to main
+        if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+          log_error "🚨 [HARD OS GATE] Tier 2 verification FAILED for task [${done_task_id}]! Refusing to commit broken changes to main."
+          safe_update_task_status "$done_task_id" "[!] BLOCKED"
+          safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} failed Tier 2 verification gate before commit. Marked [!] BLOCKED."
+          return 1
+        fi
+
+        log_ok "[${mode_label}] Hard OS Gate passed 100% ✓. Auto-committing cleanly..."
+        safe_update_task_status "$done_task_id" "[x] DONE"
         git add -A
         local commit_msg
         commit_msg=$(generate_commit_message "$done_task_id" "$mode_label")
         git commit -m "$commit_msg" 2>&1 | tee -a "${RUNTIME_DIR}/session_live.log" || true
         # Clean up verified checkpoint tag upon successful task commit
         git tag -d "ralph-checkpoint-${done_task_id}" >/dev/null 2>&1 || true
+        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} cleanly verified (Tier 2 PASS) and committed to main."
         log_ok "[${mode_label}] Working tree cleanly committed for ${done_task_id}."
       fi
     fi
@@ -749,7 +952,7 @@ _run_agent_turn() {
 execute_dual_model_review() {
   local iter="$1"
   local tier1_summary
-  tier1_summary=$(python3 "${PIPELINE_DIR}/scripts/verify.py" --summary 2>/dev/null || echo "TIER1: UNKNOWN")
+  tier1_summary=$(python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --summary 2>/dev/null || echo "TIER1: UNKNOWN")
 
   local git_diff
   git_diff=$(git diff HEAD 2>/dev/null | head -n 400 || true)
@@ -790,6 +993,274 @@ execute_dual_model_review() {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
+# Pillar 1 & 3: Parallel Worker Execution (Git Worktrees & Wave Runner)
+# ────────────────────────────────────────────────────────────────────────────
+execute_worker_for_task() {
+  local worktree_dir="$1"
+  local task="$2"
+  local branch_name="$3"
+  local repo_root="$4"
+
+  export RALPH_WORKER_ID="worker-$task"
+  export RALPH_ACTIVE_TASK="$task"
+  export RALPH_TEST_TARGET="$(get_test_target_from_table "$task")"
+
+  local heartbeat_file="${worktree_dir}/.ralph_heartbeat"
+  touch "$heartbeat_file"
+
+  safe_update_task_status "$task" "[/] IN_PROGRESS"
+  safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] started task ${task} in worktree ${worktree_dir}"
+
+  # 1. State: EXECUTING
+  local task_spec
+  task_spec=$(get_task_spec "$task")
+  local complexity_metrics
+  complexity_metrics=$(inspect_task_complexity "$task")
+  local svc_count="${complexity_metrics% *}"
+  local file_count="${complexity_metrics#* }"
+  local complexity_notice=""
+  if (( svc_count > 3 || file_count > 5 )); then
+    complexity_notice="High complexity task. Keep changes strictly localized."
+  fi
+
+  local executor_prompt
+  executor_prompt=$(_build_executor_payload_safe "$task" "$task_spec" "PARALLEL-WORKER" "$complexity_notice")
+
+  (
+    cd "$worktree_dir"
+    _run_agent_turn "$executor_prompt" "$PRINT_TIMEOUT" "1" "$EXECUTOR_MODEL" "WORKER-${task}"
+  )
+  local agent_exit=$?
+
+  if [[ $agent_exit -eq 124 || $agent_exit -eq 7 ]]; then
+    safe_update_task_status "$task" "[!] BLOCKED"
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
+    return 1
+  fi
+
+  # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree)
+  log_info "[Worker $task] Running Tier 1 local verification..."
+  if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1); then
+    log_error "🚨 [Worker $task] Local Tier 1 verification failed! Task marked [!] BLOCKED."
+    safe_update_task_status "$task" "[!] BLOCKED"
+    return 1
+  fi
+
+  git -C "$worktree_dir" add -A
+  local commit_msg
+  commit_msg=$(generate_commit_message "$task" "PARALLEL-WORKER")
+  git -C "$worktree_dir" commit -m "$commit_msg" >/dev/null 2>&1 || true
+
+  # 3. State: QUEUED_FOR_MERGE (Serialized integration queue with Solution B adaptive lock)
+  (
+    wait_and_acquire_merge_lock || {
+      log_error "[MERGE-QUEUE] Worker $task failed to acquire merge lock!"
+      safe_update_task_status "$task" "[!] BLOCKED"
+      exit 1
+    }
+
+    log_info "[MERGE-QUEUE] Worker $task entering serialized integration into main..."
+
+    # 4. State: REBASING on main
+    if ! git -C "$worktree_dir" rebase main >/dev/null 2>&1; then
+      log_warn "[MERGE-QUEUE] Worker $task rebase conflict. Aborting rebase and marking task BLOCKED."
+      git -C "$worktree_dir" rebase --abort 2>/dev/null || true
+      safe_update_task_status "$task" "[!] BLOCKED"
+      exit 1
+    fi
+
+    # 5. Integrate to main
+    git -C "$repo_root" checkout main >/dev/null 2>&1
+    git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1
+
+    # 6. Hard Gate Tier 2 on main (Reset hard if fail!)
+    if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+      git -C "$repo_root" commit -m "$commit_msg" >/dev/null 2>&1
+      safe_update_task_status "$task" "[x] DONE"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into main (Tier 2 PASS)."
+      log_ok "🎉 [INTEGRATED] Task $task merged and verified on main ✓"
+    else
+      git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
+      safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on main. Reverted via reset --hard."
+      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on main. Reverted cleanly via reset --hard."
+    fi
+  ) 202>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
+}
+
+run_parallel_waves() {
+  local max_workers="${PARALLEL_WORKERS:-3}"
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+  log_section "PARALLEL WAVE DISPATCHER (Max Workers: ${max_workers})"
+
+  # 1. Run task_dispatcher.py to generate wave schedule
+  local schedule_json
+  schedule_json=$(python3 "${PIPELINE_DIR}/scripts/task_dispatcher.py" "${CONTEXT_DIR}/Tasks_list.md" --max-workers "$max_workers" 2>/dev/null || echo "[]")
+
+  local wave_count
+  wave_count=$(echo "$schedule_json" | python3 -c 'import sys, json; data=json.load(sys.stdin); print(len(data))' 2>/dev/null || echo "0")
+
+  if [[ "$wave_count" -eq 0 ]]; then
+    log_ok "No pending tasks to dispatch in parallel. All tasks are completed or blocked."
+    return 0
+  fi
+
+  log_info "Task Dispatcher identified ${wave_count} wave(s) of disjoint tasks."
+
+  local wave_idx=0
+  while (( wave_idx < wave_count )); do
+    local wave_num=$(( wave_idx + 1 ))
+    local tasks_in_wave
+    tasks_in_wave=$(echo "$schedule_json" | python3 -c "import sys, json; data=json.load(sys.stdin); print(' '.join(t['task_id'] for t in data[$wave_idx]['tasks']))" 2>/dev/null || echo "")
+
+    log_section "DISPATCHING WAVE ${wave_num}/${wave_count}: [${tasks_in_wave}]"
+
+    local wave_pre_commit
+    wave_pre_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo "")"
+    local pids=()
+    local wave_worktrees=()
+    local wave_branches=()
+
+    for task in $tasks_in_wave; do
+      local worktree_dir="${PIPELINE_DIR}/.ralph/worktrees/${RUN_ID}/${task}"
+      local branch_name="ralph/${RUN_ID}/${task}"
+
+      mkdir -p "$(dirname "$worktree_dir")"
+      git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" main >/dev/null 2>&1 || {
+        log_error "Failed to create git worktree for $task. Skipping."
+        continue
+      }
+
+      ACTIVE_WORKTREES+=("$worktree_dir")
+      ACTIVE_BRANCHES+=("$branch_name")
+      wave_worktrees+=("$worktree_dir")
+      wave_branches+=("$branch_name")
+
+      (
+        execute_worker_for_task "$worktree_dir" "$task" "$branch_name" "$repo_root"
+      ) &
+      pids+=($!)
+      log_info "Launched Worker for ${task} (PID: ${pids[-1]}, Worktree: ${worktree_dir})"
+    done
+
+    # Wait for all workers in this wave
+    if [[ ${#pids[@]} -gt 0 ]]; then
+      log_info "Waiting for Wave ${wave_num} workers to finish..."
+      wait "${pids[@]}" || true
+    fi
+
+    # Post-Wave Integration Gate
+    log_section "POST-WAVE ${wave_num} INTEGRATION GATE"
+    if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+      log_error "🚨 [WAVE REGRESSION] Cross-task interaction broke full test suite! Rolling back Wave ${wave_num}..."
+      git -C "$repo_root" reset --hard "$wave_pre_commit"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Wave ${wave_num} regression detected! Reverted to ${wave_pre_commit}."
+      return 1
+    fi
+    log_ok "Wave ${wave_num} integration verified 100% PASS ✓"
+
+    # Cleanup worktrees and branches for this wave
+    for wt in "${wave_worktrees[@]}"; do
+      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+    done
+    for br in "${wave_branches[@]}"; do
+      git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
+    done
+
+    wave_idx=$(( wave_idx + 1 ))
+  done
+
+  log_ok "All parallel waves completed successfully!"
+  return 0
+}
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pillar 6: Isolated Bug Fix Workflow (Agentless Pattern)
+# ────────────────────────────────────────────────────────────────────────────
+run_fix_bug_flow() {
+  local error_input="$1"
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+  log_section "AGENTLESS BUG FIX MODE"
+  log_info "Analyzing input error / traceback..."
+
+  local culprit_file=""
+  if [[ -f "$error_input" ]]; then
+    error_input=$(cat "$error_input")
+  fi
+
+  culprit_file=$(python3 -c "
+import re, sys
+text = '''$error_input'''
+matches = re.findall(r'File [\"\\\'](.*?(\.py|\.sh|\.json|\.ts|\.js))[\"\\\'], line (\d+)', text)
+if matches:
+    print(matches[-1][0])
+else:
+    file_match = re.search(r'([a-zA-Z0-9_\-\./]+\.(py|sh|json|ts|js))', text)
+    print(file_match.group(1) if file_match else '')
+" 2>/dev/null || echo "")
+
+  if [[ -z "$culprit_file" ]]; then
+    log_warn "Could not automatically localize culprit file from error input."
+    log_info "Prompting Agent for general bug reproduction & fix..."
+  else
+    log_info "🎯 Localized culprit file: ${culprit_file}"
+  fi
+
+  # Reproduce: Build isolated test reproducing the bug
+  local reproduce_dir="${repo_root}/tests/reproduce"
+  mkdir -p "$reproduce_dir"
+  local test_file="${reproduce_dir}/test_bug_reproduce.py"
+
+  local bug_prompt="[AGENTLESS-BUGFIX]
+Phát hiện lỗi sau đây cần sửa chữa triệt để:
+=== 🐛 ERROR REPORT ===
+${error_input}
+
+=== 🎯 MỤC TIÊU ===
+1. Nếu chưa có test tái hiện: Tạo file test tại '${test_file}' để tái hiện đúng lỗi này (Test Contract Red).
+2. Sửa lỗi chính xác tại file nguồn (chỉ sửa root cause, không vá tạm bợ).
+3. Đảm bảo chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target ${test_file}' PASS 100%.
+4. Đảm bảo chạy full 'python3 pipeline/scripts/verify.py --tier 2' PASS 100% không gây regression."
+
+  log_info "Running Agent Turn for targeted bug fix..."
+  _run_agent_turn "$bug_prompt" "$PRINT_TIMEOUT" "1" "$EXECUTOR_MODEL" "BUGFIX-AGENT"
+
+  # Verify
+  log_info "Verifying bug fix via deterministic Tier 1 and Tier 2..."
+  local tier1_ok=false
+  local tier2_ok=false
+
+  if [[ -f "$test_file" ]]; then
+    if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --test-target "$test_file"; then
+      tier1_ok=true
+    fi
+  else
+    tier1_ok=true
+  fi
+
+  if [[ "$tier1_ok" == "true" ]] && PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+    tier2_ok=true
+  fi
+
+  if [[ "$tier2_ok" == "true" ]]; then
+    git -C "$repo_root" add -A
+    git -C "$repo_root" commit -m "[BUGFIX] Resolved issue: $(echo "$error_input" | head -n 1 | cut -c 1-50)"
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Agentless bug fix succeeded and cleanly committed to main."
+    log_ok "🎉 [BUGFIX] Bug fix verified and committed cleanly ✓"
+    return 0
+  else
+    log_error "🚨 [BUGFIX FAILED] Bug fix did not pass Tier 2 verification. Reverting uncommitted changes..."
+    git -C "$repo_root" checkout -- . 2>/dev/null || true
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Agentless bug fix failed verification. Changes reverted."
+    return 1
+  fi
+}
+
+# ────────────────────────────────────────────────────────────────────────────
 # Main Master Loop
 # ────────────────────────────────────────────────────────────────────────────
 main() {
@@ -798,6 +1269,18 @@ main() {
 
   if [[ -n "$PROVIDER_OVERRIDE" ]]; then
     export AGENT_PROVIDER="$PROVIDER_OVERRIDE"
+  fi
+
+  # Dispatch to isolated bug fix mode if requested
+  if [[ -n "$FIX_BUG_TARGET" ]]; then
+    run_fix_bug_flow "$FIX_BUG_TARGET"
+    exit $?
+  fi
+
+  # Dispatch to parallel wave mode if requested
+  if [[ "$PARALLEL_MODE" == "true" ]]; then
+    run_parallel_waves
+    exit $?
   fi
 
   local iter=0
@@ -891,7 +1374,7 @@ main() {
     [[ -n "$REVIEW_MODEL" ]] && role_tag="DUAL-MODEL"
 
     local executor_prompt
-    executor_prompt=$(_build_executor_payload "$active_task" "$task_spec" "$role_tag" "$complexity_notice")
+    executor_prompt=$(_build_executor_payload_safe "$active_task" "$task_spec" "$role_tag" "$complexity_notice")
 
     set +e
     _run_agent_turn "$executor_prompt" "$PRINT_TIMEOUT" "$iter" "$EXECUTOR_MODEL" "EXECUTOR"

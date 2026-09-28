@@ -20,7 +20,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if [[ -z "$RUN_DIR" ]]; then
-  RUN_DIR="$(ls -dt "$ROOT/.ralph/runs"/*/ 2>/dev/null | head -1 || echo "$ROOT/.ralph")"
+  if [[ -e "$ROOT/docs/runtime/CURRENT" ]]; then
+    RUN_DIR="$(readlink -f "$ROOT/docs/runtime/CURRENT" 2>/dev/null || ls -dt "$ROOT/docs/runtime/runs"/*/ 2>/dev/null | head -1 || ls -dt "$ROOT/.ralph/runs"/*/ 2>/dev/null | head -1 || echo "$ROOT/.ralph")"
+  else
+    RUN_DIR="$(ls -dt "$ROOT/docs/runtime/runs"/*/ 2>/dev/null | head -1 || ls -dt "$ROOT/.ralph/runs"/*/ 2>/dev/null | head -1 || echo "$ROOT/.ralph")"
+  fi
 fi
 RUN_DIR="${RUN_DIR%/}"
 
@@ -33,6 +37,16 @@ REPORT="$RUN_DIR/analysis.md"
 echo "🔍 [RETRO] Analyzing execution logs in $RUN_DIR..."
 node "$ROOT/scripts/ralph-analyze.mjs" "$RUN_DIR" | tee "$REPORT"
 echo ""
+
+# Update Durable Global Memory: LEARNINGS.md
+LEARNINGS_FILE="$ROOT/docs/runtime/LEARNINGS.md"
+if [[ -f "$REPORT" ]] && ! grep -q '_none_' "$REPORT"; then
+  {
+    echo -e "\n### [RETRO RUN ${RUN_DIR##*/}] $(date '+%Y-%m-%d %H:%M:%S')"
+    head -n 20 "$REPORT"
+    echo ""
+  } >> "$LEARNINGS_FILE" 2>/dev/null || true
+fi
 
 if grep -q '_none_' "$REPORT"; then
   echo "✅ [RETRO] No recurring tool errors detected. Harness is healthy."
