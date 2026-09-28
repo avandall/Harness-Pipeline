@@ -38,7 +38,11 @@ You have just received architectural critique and adversarial questions from the
      - **QUY MÔ VỪA VẶN & TRÁNH TIMEOUT (ATOMIC TASK SIZING)**:
        * Mỗi task chỉ được sửa tối đa 5–8 files và giới hạn trong 1 service duy nhất.
        * TUYỆT ĐỐI KHÔNG gom nhiều microservices vào một task (ví dụ: 'Chuẩn hóa Timezone 8 services'). Phải tách thành các task con độc lập theo từng service (TASK-xxxA, TASK-xxxB...).
-     - Đảm bảo mỗi task đều có: Task ID (`TASK-001`), Tiêu đề, Mô tả, Dependencies (danh sách module từ task trước mà task này được phép import), Test Cases cụ thể (unit/integration/edge cases), và Acceptance Criteria (DoD) đo lường được.
+      - **TASK TYPE & TEST STRATEGY**:
+        * Phải khai báo rõ Task Type (`feature`, `refactor`, `scaffold`).
+        * Với `feature`: Bắt buộc chỉ định Test Gate Files và test cases cụ thể để AI viết test trước (TDD Red -> Green).
+        * Với `refactor`: Dùng test suite hiện có làm Regression Guard, cấm duplicate tests.
+      - Đảm bảo mỗi task đều có: Task ID (`TASK-001`), Tiêu đề, Task Type, Mô tả, Dependencies, Test Strategy, và Acceptance Criteria (DoD) đo lường được theo Tier 0, 1, 2.
      - Format bảng và chi tiết từng task phải tuân thủ chuẩn template mẫu.
    - **`pipeline/docs/context/BOUNDARIES.md`**: Bổ sung ranh giới, các file/thư mục cấm đụng đến, và phạm vi được phép chỉnh sửa nếu Critic yêu cầu làm rõ.
    - **`pipeline/docs/context/PROJECT_BRIEF.md`** & **`TECH_CONTEXT.md`**: Cập nhật nếu có giả định kiến trúc hoặc tech stack mới cần xác định. Cấu trúc thư mục phải khớp với Task 1.

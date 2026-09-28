@@ -41,11 +41,12 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
   * **NẾU PHÁT HIỆN TASK QUÁ LỚN (>8 files hoặc đa service):** BẮT BUỘC REJECT và yêu cầu Planner chia nhỏ thành các sub-tasks độc lập theo từng service (ví dụ: TASK-xxxA cho Core/Shared Library, TASK-xxxB cho Service 1, TASK-xxxC cho Service 2...).
   * Mỗi task phải được thiết kế để hoàn thành trọn vẹn và verify pass trong vòng 15–20 phút.
 
-### 4. Acceptance Criteria & Test Cases (DoD Đo lường được)
-- TỪNG TASK trong `Tasks_list.md` PHẢI có:
-  - Mục tiêu rõ ràng.
-  - Danh sách test cases cụ thể (happy path + edge cases).
-  - Tiêu chí nghiệm thu (DoD) có thể chạy lệnh kiểm tra tự động (`python3 pipeline/scripts/verify.py` hoặc test suite).
+### 4. Acceptance Criteria & Test Strategy theo Task Type (DoD Đo lường được)
+- TỪNG TASK trong `Tasks_list.md` PHẢI xác định rõ `Task Type` (`feature`, `refactor`, `scaffold`):
+  - **Với task `feature`:** BẮT BUỘC có danh sách test cases và chỉ định file `Test Gate Files` (tạo test trước theo TDD contract Red ➔ Green).
+  - **Với task `refactor`:** TUYỆT ĐỐI KHÔNG duplicate test; dùng test suite hiện tại làm Regression Guard (yêu cầu không làm giảm số lượng tests pass).
+  - **Với task `scaffold` / `setup`:** Kiểm tra manifest, layout và lint/typecheck.
+  - Tiêu chí nghiệm thu (DoD) có thể chạy lệnh kiểm tra tự động theo phân tầng Tier 0 (lint/type), Tier 1 (test targeted), Tier 2 (full regression).
 
 ### 5. Dependency-First & Import Integrity (Chống Lỗi Import & Phụ Thuộc Ngược)
 - **Kiểm tra đồ thị phụ thuộc giữa các Task**:

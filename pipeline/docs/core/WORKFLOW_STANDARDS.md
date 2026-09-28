@@ -94,23 +94,33 @@ PHASE 7: REPORT     → Cập nhật tất cả runtime docs
 
 ---
 
-## PHASE 4 — VERIFY (Kiểm tra Định tính Tier 1 & Runtime)
+## PHASE 4 — VERIFY (Kiểm tra Định tính Phân tầng Tier 0 / Tier 1 / Tier 2)
 
-**Mục tiêu:** Chứng minh code hoạt động 100% bằng công cụ kiểm tra định tính (Deterministic CLI Tools) khách quan trước khi nhờ LLM review.
+**Mục tiêu:** Chứng minh code hoạt động 100% bằng công cụ kiểm tra định tính khách quan theo từng chu kỳ mà không lãng phí token và thời gian.
 
-**Quy trình BẮT BUỘC:**
-1. **Chạy Script kiểm tra định tính:**
+**Quy trình Phân tầng Kiểm thử (Tiered Verification):**
+1. **Tier 0 (Syntax & Type Gate <2s):**
    ```bash
-   python3 pipeline/scripts/verify.py
+   python3 pipeline/scripts/verify.py --tier 0
    ```
+   Chạy tức thì sau khi sửa/tạo từng file mã nguồn đơn lẻ để bắt lỗi cú pháp và kiểu dữ liệu.
 
-   Script này sẽ tự động chạy Linter, Type Checker, Security Scan, và Unit Tests theo active preset (Python, Node/React, Go, Shell, Polyglot).
+2. **Tier 1 (Targeted Unit Test Gate <10s):**
+   ```bash
+   python3 pipeline/scripts/verify.py --tier 1 --test-target tests/test_xxx.py
+   ```
+   Chạy sau mỗi atomic step của task. Tập trung đúng file test liên quan (TDD: Red -> Green), dừng ngay khi gặp lỗi đầu tiên (-x).
 
-2. **Kiểm tra báo cáo `pipeline/docs/runtime/VERIFICATION_REPORT.md`:**
+3. **Tier 2 (Full Regression & Security Gate 1-3m):**
+   ```bash
+   python3 pipeline/scripts/verify.py --tier 2
+   ```
+   Chỉ chạy khi task chuẩn bị chuyển sang [x] DONE. Chạy toàn bộ test suite của repo + quét bảo mật Bandit + Anti-cheat guard để đảm bảo an toàn tuyệt đối trước khi Harness auto-commit.
+4. **Kiểm tra báo cáo `pipeline/docs/runtime/VERIFICATION_REPORT.md`:**
    - Nếu `Status: FAIL`: Đọc các dòng log Traceback được cắt tỉa gọn gàng trong file `VERIFICATION_REPORT.md`. Sửa ngay các lỗi này và chạy lại `verify.py`. **KHÔNG ĐƯỢC CHUYỂN SANG PHASE 5 KHI VẪN CÒN CƠ LỖI TIER 1!**
    - Nếu `Status: PASS`: Chuyển sang Phase 5.
 
-3. **Capture Bằng Chứng:**
+5. **Capture Bằng Chứng:**
    - Ghi ngắn gọn kết quả Tier 1 Verification vào `pipeline/docs/runtime/PROOF_OF_SOLUTION.md`.
 
 ---
