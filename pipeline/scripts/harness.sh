@@ -51,6 +51,7 @@ PARALLEL_WORKERS="${RALPH_MAX_WORKERS:-3}"
 FIX_BUG_TARGET=""
 declare -a ACTIVE_WORKTREES=()
 declare -a ACTIVE_BRANCHES=()
+declare -a GLOBAL_WORKER_PIDS=()
 
 # Colors
 RED='\033[0;31m'
@@ -87,14 +88,14 @@ init_run_lifecycle() {
   touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
 }
 
-REPO_ROOT_DIR="$(cd "${PIPELINE_DIR}/.." && pwd)"
-if [[ ! -d "$REPO_ROOT_DIR" ]]; then
+_RALPH_REPO_ROOT="$(cd "${PIPELINE_DIR}/.." && pwd)"
+if [[ ! -d "$_RALPH_REPO_ROOT" ]]; then
   echo "FATAL: Could not determine project root from PIPELINE_DIR=${PIPELINE_DIR}" >&2
   exit 1
 fi
-_EXTRA_PY_PATHS="${REPO_ROOT_DIR}"
-[[ -d "${REPO_ROOT_DIR}/src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${REPO_ROOT_DIR}/src"
-[[ -d "${REPO_ROOT_DIR}/app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${REPO_ROOT_DIR}/app"
+_EXTRA_PY_PATHS="${_RALPH_REPO_ROOT}"
+[[ -d "${_RALPH_REPO_ROOT}/src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${_RALPH_REPO_ROOT}/src"
+[[ -d "${_RALPH_REPO_ROOT}/app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${_RALPH_REPO_ROOT}/app"
 export PYTHONPATH="${_EXTRA_PY_PATHS}:${PYTHONPATH:-}"
 
 reap_orphans() {
@@ -106,7 +107,12 @@ reap_orphans() {
 
 cleanup_on_interrupt() {
   echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Terminating workers & cleaning up active worktrees...${NC}"
-  # 1. Kill active workers FIRST so they do not operate on disappearing worktree directories
+  # 1. Kill tracked worker PIDs explicitly, then reap any remaining tagged orphans
+  if ((${#GLOBAL_WORKER_PIDS[@]} > 0)); then
+    for wpid in "${GLOBAL_WORKER_PIDS[@]}"; do
+      kill -TERM "$wpid" 2>/dev/null || true
+    done
+  fi
   reap_orphans
   wait 2>/dev/null || true
 
@@ -131,6 +137,7 @@ cleanup_on_interrupt() {
   fi
   ACTIVE_WORKTREES=()
   ACTIVE_BRANCHES=()
+  GLOBAL_WORKER_PIDS=()
 
   exit 130
 }
@@ -166,6 +173,10 @@ safe_update_task_status() {
 
   local lock_fd
   {
+    if [[ -z "${lock_fd:-}" ]]; then
+      log_error "Failed to allocate file descriptor for lock on $lock_file"
+      return 1
+    fi
     flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
     # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
     sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
@@ -183,6 +194,10 @@ safe_append_durable_log() {
 
   local lock_fd
   {
+    if [[ -z "${lock_fd:-}" ]]; then
+      log_error "Failed to allocate file descriptor for lock on $lock_file"
+      return 1
+    fi
     flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) appending to durable log $log_file"; return 1; }
     echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
   } {lock_fd}>"$lock_file"
@@ -204,22 +219,18 @@ wait_and_acquire_merge_lock() {
     fi
     elapsed=$(( elapsed + interval ))
 
-    # Inspect holder PID for diagnostics only — NEVER rm lock file (breaks flock inode semantics)
-    local holder_pid=""
+    # Inspect active PIDs for diagnostics only — NEVER rm lock file (breaks flock inode semantics)
+    local active_pids=""
     if command -v fuser >/dev/null 2>&1; then
-      holder_pid=$(fuser "$lock_file" 2>/dev/null | awk '{print $1}' || echo "")
+      active_pids=$(fuser "$lock_file" 2>/dev/null | tr -s ' ' ', ' || echo "")
     elif command -v lsof >/dev/null 2>&1; then
-      holder_pid=$(lsof -t "$lock_file" 2>/dev/null | head -n 1 || echo "")
+      active_pids=$(lsof -t "$lock_file" 2>/dev/null | paste -sd, - || echo "")
     fi
 
-    if [[ -n "$holder_pid" ]]; then
-      if kill -0 "$holder_pid" 2>/dev/null; then
-        log_info "[MERGE-QUEUE] Lock held by active PID $holder_pid (running Tier 2 integration). Waiting... (${elapsed}/${max_total_wait}s)"
-      else
-        log_info "[MERGE-QUEUE] Previous PID $holder_pid exited. Re-attempting lock... (${elapsed}/${max_total_wait}s)"
-      fi
+    if [[ -n "$active_pids" ]]; then
+      log_info "[MERGE-QUEUE] Lock contested by PID(s): ${active_pids}. Waiting... (${elapsed}/${max_total_wait}s)"
     else
-      log_info "[MERGE-QUEUE] Waiting for lock... (${elapsed}/${max_total_wait}s)"
+      log_info "[MERGE-QUEUE] Waiting for serialized merge lock... (${elapsed}/${max_total_wait}s)"
     fi
   done
 
@@ -664,7 +675,13 @@ sync_venv_dependencies() {
 
 preflight_check() {
   log_section "PRE-FLIGHT CHECK"
-  local errors=0
+  # Check Bash version (Bash 4.1+ required for dynamic file descriptors {fd}>file)
+  if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
+    log_error "Bash 4.1+ is required for Ralph Loop concurrency features (detected: ${BASH_VERSION})."
+    ((errors++))
+  else
+    log_ok "Bash version supported: ${BASH_VERSION}"
+  fi
 
   # Sync virtual environment & dependencies via uv
   sync_venv_dependencies
@@ -752,16 +769,16 @@ generate_commit_message() {
 
   if [[ -f "$tasks_file" && -n "$tid" ]]; then
     # 1. Extract Task Name from table or heading (literal string match via index)
-    task_name=$(awk -F'|' -v tid="$tid" 'index($0, tid) > 0 {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}' "$tasks_file")
+    task_name=$(awk -F'|' -v tid="$tid" '$0 ~ /^[[:space:]]*\|/ && index($0, tid) > 0 && NF >= 3 {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}' "$tasks_file")
     if [[ -z "$task_name" ]]; then
-      task_name=$(awk -v tid="$tid" 'index($0, "### ") == 1 && index($0, tid) > 0 {sub(/^### [^ ]* [^:]*:[ \t]*/, ""); print; exit}' "$tasks_file")
+      task_name=$(awk -v tid="$tid" '$0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, tid) > 0 {sub(/^[[:space:]]*### [^ ]* [^:]*:[ \t]*/, ""); print; exit}' "$tasks_file")
     fi
 
     # 2. Extract Task Type from metadata
     local raw_type
     raw_type=$(awk -v tid="$tid" '
-      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
-      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
+      $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, tid) > 0 { found=1; next }
+      found && $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, "TASK-") > 0 { exit }
       found && /Task Type:/ { sub(/.*Task Type:[ \t]*/, ""); print; exit }
     ' "$tasks_file" | tr '[:upper:]' '[:lower:]' | tr -d ' \r\t')
 
@@ -776,14 +793,14 @@ generate_commit_message() {
 
     # 3. Extract Why & What from spec
     task_why=$(awk -v tid="$tid" '
-      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
-      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
+      $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, tid) > 0 { found=1; next }
+      found && $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, "TASK-") > 0 { exit }
       found && /^[ \t]*- \*\*Why:\*\*/ { sub(/^[ \t]*- \*\*Why:\*\*[ \t]*/, ""); print; exit }
     ' "$tasks_file")
 
     task_what=$(awk -v tid="$tid" '
-      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
-      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
+      $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, tid) > 0 { found=1; next }
+      found && $0 ~ /^[[:space:]]*###[[:space:]]/ && index($0, "TASK-") > 0 { exit }
       found && /^[ \t]*- \*\*What:\*\*/ { sub(/^[ \t]*- \*\*What:\*\*[ \t]*/, ""); print; exit }
     ' "$tasks_file")
   fi
@@ -1086,6 +1103,12 @@ execute_worker_for_task() {
   # 3. State: QUEUED_FOR_MERGE (Serialized integration queue with Solution B adaptive lock)
   local merge_fd
   {
+    if [[ -z "${merge_fd:-}" ]]; then
+      log_error "[MERGE-QUEUE] Failed to allocate dynamic file descriptor for merge lock!"
+      safe_update_task_status "$task" "[!] BLOCKED"
+      exit 1
+    fi
+
     wait_and_acquire_merge_lock "$merge_fd" || {
       log_error "[MERGE-QUEUE] Worker $task failed to acquire merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
@@ -1203,7 +1226,8 @@ run_parallel_waves() {
       mkdir -p "$(dirname "$worktree_dir")"
       if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" main >/dev/null 2>&1; then
         log_error "Failed to create git worktree for $task. Skipping."
-        sed -i -E "\|^${worktree_dir}\|d" "$reg_file" 2>/dev/null || true
+        local reg_tmp="${reg_file}.tmp"
+        awk -v target="$worktree_dir" -F'|' '$1 != target' "$reg_file" > "$reg_tmp" 2>/dev/null && mv "$reg_tmp" "$reg_file" 2>/dev/null || true
         git -C "$repo_root" branch -D "$branch_name" >/dev/null 2>&1 || true
         continue
       fi
@@ -1212,6 +1236,7 @@ run_parallel_waves() {
         execute_worker_for_task "$worktree_dir" "$task" "$branch_name" "$repo_root"
       ) &
       pids+=($!)
+      GLOBAL_WORKER_PIDS+=($!)
       log_info "Launched Worker for ${task} (PID: ${pids[-1]}, Worktree: ${worktree_dir})"
     done
 
@@ -1250,6 +1275,7 @@ run_parallel_waves() {
       rm -f "$reg_file"
       ACTIVE_WORKTREES=()
       ACTIVE_BRANCHES=()
+      GLOBAL_WORKER_PIDS=()
       return 1
     fi
     log_ok "Wave ${wave_num} integration verified 100% PASS ✓"
@@ -1264,6 +1290,7 @@ run_parallel_waves() {
     rm -f "$reg_file"
     ACTIVE_WORKTREES=()
     ACTIVE_BRANCHES=()
+    GLOBAL_WORKER_PIDS=()
 
     wave_idx=$(( wave_idx + 1 ))
   done
@@ -1311,9 +1338,9 @@ else:
   local reproduce_dir="${repo_root}/tests/reproduce"
   mkdir -p "$reproduce_dir"
   local test_file="${reproduce_dir}/test_bug_reproduce.py"
-  local err_report_file="${reproduce_dir}/error_report.txt"
+  local err_report_file="${RUNTIME_DIR}/error_report.txt"
 
-  # Injection-safe storage: write raw error into isolated report file (Issue NEW2.8)
+  # Injection-safe storage: write raw error into isolated report file in RUNTIME_DIR (Issue NEW2.8, NEW3.7)
   printf '%s\n' "$error_input" > "$err_report_file"
 
   local bug_prompt="[AGENTLESS-BUGFIX]
@@ -1345,9 +1372,15 @@ Phát hiện lỗi cần sửa chữa triệt để (Chi tiết lỗi lưu tại
     tier2_ok=true
   fi
 
+  # Clean up error_report_file so sensitive data is never committed to git history (Issue NEW3.7)
+  rm -f "$err_report_file" 2>/dev/null || true
+
   if [[ "$tier2_ok" == "true" ]]; then
+    local bug_summary
+    bug_summary=$(printf '%s' "$error_input" | head -n 1 | tr -cd '[:alnum:] _.,-:()[]' | cut -c 1-50)
+    [[ -z "$bug_summary" ]] && bug_summary="targeted error reproduction"
     git -C "$repo_root" add -A
-    git -C "$repo_root" commit -m "[BUGFIX] Resolved issue: $(echo "$error_input" | head -n 1 | cut -c 1-50)"
+    git -C "$repo_root" commit -m "fix(agentless): resolve issue: ${bug_summary}"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Agentless bug fix succeeded and cleanly committed to main."
     log_ok "🎉 [BUGFIX] Bug fix verified and committed cleanly ✓"
     return 0

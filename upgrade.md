@@ -84,6 +84,22 @@
 | **11. Kiểm tra exit status của git commit trên main** | **LOW** | Không phát hiện được lỗi khi git commit thất bại trên main. | Kiểm tra mã thoát của `git commit`, phân biệt no-op và lỗi staged thực sự. |
 | **12. Phạm vi logic coupling transitive AST** | **LOW** | Cần đảm bảo tính nhất quán của AST BFS graph khi tính coupling. | Xác nhận thiết kế: cho phép shared read-only import, chặn triệt để read-write conflict. |
 
+### 2.4. BẢNG KHẮC PHỤC CÁC ĐIỂM YẾU TỪ RE-CRITIQUE v2.3
+
+| Lỗ hổng phát hiện (Re-Critique v2.3) | Mức độ | Hậu quả nếu không sửa | Phương án xử lý dứt điểm |
+| :--- | :--- | :--- | :--- |
+| **1. Yêu cầu Bash 4.1+ cho dynamic FD `{fd}>`** | **CRITICAL** | Parse error trên các môi trường Bash cũ (macOS default 3.2 hoặc container cũ). | Thêm check `BASH_VERSINFO` trong `preflight_check` (yêu cầu Bash >= 4.1). |
+| **2. `echo "$error_input"` trong commit message** | **CRITICAL** | `echo` gặp `-e`/`-n` gây sai lệch; ký tự lạ phá vỡ lệnh `git commit`. | Dùng `printf '%s'`, lọc ký tự an toàn và áp dụng format chuẩn `fix(agentless): ...`. |
+| **3. Sed pattern trong rollback `reg_file`** | **HIGH** | Path chứa ký tự đặc biệt làm sed xóa nhầm hoặc no-op. | Dùng `awk -v target="$worktree_dir" -F'\|' '$1 != target'` so khớp literal 100%. |
+| **4. `fuser` list nhiều PIDs gây hiểu lầm holder** | **HIGH** | Log chẩn đoán ghi nhận PID của waiter thay vì holder thực sự. | Format danh sách `active_pids` rõ ràng thành "Lock contested by PID(s): ...". |
+| **5. Argparse help output chưa tối ưu** | **HIGH** | Output `--help` hiển thị tham số vị trí khó hiểu. | Đặt `usage` chuẩn và định danh `metavar` trực quan cho tham số. |
+| **6. `pkill -f` không chắc chắn diệt được worker** | **MEDIUM** | Worker subshell không chứa chuỗi `RALPH_RUN_TAG` trong argv. | Bổ sung mảng `GLOBAL_WORKER_PIDS` theo dõi và `kill -TERM` trực tiếp PID worker. |
+| **7. Rò rỉ `error_report.txt` vào Git history** | **MEDIUM** | Traceback chứa thông tin nhạy cảm bị `git add -A` commit lên main. | Chuyển file sang `RUNTIME_DIR` và tự động `rm -f` trước khi commit. |
+| **8. AWK match `index($0, tid)` quá rộng** | **MEDIUM** | Khớp nhầm dòng ghi chú comment hoặc log chứa chuỗi task ID. | Giới hạn chỉ match dòng bảng Markdown (`^\|`) hoặc heading (`^###`). |
+| **9. Cấp phát dynamic FD thất bại nếu bảng FD đầy** | **MEDIUM** | `lock_fd` rỗng dẫn đến gọi lệnh `flock ""` văng lỗi không rõ ràng. | Thêm guard kiểm tra `[[ -z "${lock_fd:-}" ]]` báo lỗi fail-fast. |
+| **10. Tên biến `REPO_ROOT_DIR` dễ xung đột env** | **LOW** | Trùng với biến môi trường của user khi source script. | Đổi tên biến nội bộ thành `_RALPH_REPO_ROOT`. |
+| **11. Quy chuẩn commit message** | **LOW** | Thiếu convention scope trong commit. | Chuẩn hóa toàn bộ commit message theo `fix(pipeline): ...`. |
+
 ---
 
 ## 3. CHI TIẾT 7 TRỤ CỘT KÈM PSEUDO-CODE REVIEW

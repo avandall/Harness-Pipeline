@@ -252,11 +252,14 @@ def build_waves(tasks: list[TaskMeta], repo_root: Path, max_workers: int = 3) ->
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Deterministic 0-Token Task Dispatcher")
-    parser.add_argument("arg1", nargs="?", default="", help="Path to Tasks_list.md or max workers")
-    parser.add_argument("arg2", nargs="?", default="", help="Optional second argument (workers or path)")
-    parser.add_argument("--tasks-file", "-f", default="", help="Path to Tasks_list.md (optional flag)")
-    parser.add_argument("--max-workers", "-w", type=int, default=0, help="Max workers per wave")
+    parser = argparse.ArgumentParser(
+        description="Deterministic 0-Token Task Dispatcher for Ralph Loop (v2.0)",
+        usage="%(prog)s [TASKS_FILE] [--max-workers N]"
+    )
+    parser.add_argument("arg1", nargs="?", default="", metavar="TASKS_FILE", help="Path to Tasks_list.md or max workers count")
+    parser.add_argument("arg2", nargs="?", default="", metavar="MAX_WORKERS", help="Optional second argument (workers count or path)")
+    parser.add_argument("--tasks-file", "-f", default="", help="Explicit path to Tasks_list.md")
+    parser.add_argument("--max-workers", "-w", type=int, default=0, help="Max workers per wave (default: 3)")
 
     args = parser.parse_args()
 
