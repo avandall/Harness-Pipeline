@@ -67,6 +67,23 @@
 | **11. `_EXTRA_PY_PATHS` relative path `.`** | **LOW** | Relative path gây lệch module lookup khi cd vào worktrees khác. | Chuyển thành đường dẫn tuyệt đối chuẩn hóa theo `PIPELINE_DIR`. |
 | **12. Docstring usage outdated trong dispatcher** | **LOW** | Ví dụ trong docstring không khớp cú pháp `argparse` mới. | Đồng bộ docstring khớp 100% cú pháp CLI `argparse`. |
 
+### 2.3. BẢNG KHẮC PHỤC CÁC ĐIỂM YẾU TỪ RE-CRITIQUE v2.2
+
+| Lỗ hổng phát hiện (Re-Critique v2.2) | Mức độ | Hậu quả nếu không sửa | Phương án xử lý dứt điểm |
+| :--- | :--- | :--- | :--- |
+| **1. Biến root global không được validate** | **CRITICAL** | `REPO_ROOT_DIR` bị sai silently nếu `PIPELINE_DIR` lệch, làm hỏng PYTHONPATH. | Đổi tên, thêm guard kiểm tra `[[ ! -d "$REPO_ROOT_DIR" ]]` và fail-fast. |
+| **2. Commit rỗng trên main nếu generator lỗi** | **CRITICAL** | `generate_commit_message` trả về rỗng làm vỡ commit convention hoặc fail. | Thêm fallback commit message và kiểm tra kết quả `git commit`. |
+| **3. Race window worktree add và registry** | **CRITICAL** | Ctrl+C rơi vào khoảng trống giữa tạo worktree và ghi file registry gây leak. | Áp dụng pattern **Write-Ahead Log (WAL)**: Ghi registry trước khi add worktree. |
+| **4. Hardcoded File Descriptor (200, 201, 202)** | **HIGH** | Gây conflict nếu tiến trình cha hoặc tool ngoài đã dùng các FD này. | Chuyển toàn bộ sang cú pháp dynamic FD: `{lock_fd}>lockfile` của Bash 4+. |
+| **5. AWK matching regex thay vì literal string** | **HIGH** | Task ID chứa ký tự lạ (dấu `.`, `+`) bị awk hiểu nhầm là regex pattern. | Dùng `index($0, tid) > 0` và `index($0, "### ") == 1` cho literal match. |
+| **6. Rebase & Squash transparency** | **HIGH** | Rebase manual resolution có thể bị gộp vào commit diff của task mà không rõ nguồn gốc. | Thẩm định và tài liệu hóa: rebase conflict lập tức abort & BLOCKED, ngăn ô nhiễm main. |
+| **7. Thứ tự kill worker trong interrupt trap** | **MEDIUM** | Remove worktree khi worker đang chạy gây lỗi cwd không tồn tại và crash ồn ào. | Gọi `reap_orphans` và `wait` trước khi xóa thư mục worktree. |
+| **8. Shell expansion trong `bug_prompt` (P0 Injection)** | **MEDIUM** | `${error_input}` nằm trong double-quoted string khiến Bash expand `$(...)`. | Ghi error vào file cô lập bằng `printf '%s\n'` và chỉ truyền path vào prompt. |
+| **9. Sentinel string rỗng `ralph-checkpoint-`** | **MEDIUM** | `target_task=""` tạo tag không hợp lệ trong git rev-parse. | Chỉ định nghĩa `ckpt_tag` khi `target_task` khác rỗng. |
+| **10. Khả năng tương thích CLI của `task_dispatcher.py`** | **MEDIUM** | Người dùng truyền số workers hoặc path theo thứ tự cũ bị argparse báo lỗi. | Hỗ trợ phân tích linh hoạt cả tham số vị trí lẫn cờ `--tasks-file`/`--max-workers`. |
+| **11. Kiểm tra exit status của git commit trên main** | **LOW** | Không phát hiện được lỗi khi git commit thất bại trên main. | Kiểm tra mã thoát của `git commit`, phân biệt no-op và lỗi staged thực sự. |
+| **12. Phạm vi logic coupling transitive AST** | **LOW** | Cần đảm bảo tính nhất quán của AST BFS graph khi tính coupling. | Xác nhận thiết kế: cho phép shared read-only import, chặn triệt để read-write conflict. |
+
 ---
 
 ## 3. CHI TIẾT 7 TRỤ CỘT KÈM PSEUDO-CODE REVIEW

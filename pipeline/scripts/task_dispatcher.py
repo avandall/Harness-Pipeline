@@ -6,7 +6,8 @@ Phân tích phụ thuộc Task, tập file can thiệp (Target Files) và đồ 
 
 Usage:
   python3 pipeline/scripts/task_dispatcher.py [TASKS_FILE] [--max-workers N]
-  python3 pipeline/scripts/task_dispatcher.py pipeline/docs/context/Tasks_list.md --max-workers 3
+  python3 pipeline/scripts/task_dispatcher.py [MAX_WORKERS]
+  python3 pipeline/scripts/task_dispatcher.py pipeline/docs/context/Tasks_list.md 3
   python3 pipeline/scripts/task_dispatcher.py --tasks-file pipeline/docs/context/Tasks_list.md -w 3
 """
 
@@ -252,14 +253,31 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Deterministic 0-Token Task Dispatcher")
-    parser.add_argument("tasks_file_pos", nargs="?", default="", help="Path to Tasks_list.md (positional)")
-    parser.add_argument("--tasks-file", default="", help="Path to Tasks_list.md (optional flag)")
-    parser.add_argument("--max-workers", "-w", type=int, default=3, help="Max workers per wave")
+    parser.add_argument("arg1", nargs="?", default="", help="Path to Tasks_list.md or max workers")
+    parser.add_argument("arg2", nargs="?", default="", help="Optional second argument (workers or path)")
+    parser.add_argument("--tasks-file", "-f", default="", help="Path to Tasks_list.md (optional flag)")
+    parser.add_argument("--max-workers", "-w", type=int, default=0, help="Max workers per wave")
 
     args = parser.parse_args()
 
-    tasks_file = args.tasks_file or args.tasks_file_pos or "pipeline/docs/context/Tasks_list.md"
-    max_workers = max(1, args.max_workers)
+    tasks_file = args.tasks_file
+    max_workers = args.max_workers
+
+    # Smart parsing of positional arguments (supporting both legacy and modern formats)
+    for p in (args.arg1, args.arg2):
+        if not p:
+            continue
+        if p.isdigit():
+            if max_workers <= 0:
+                max_workers = int(p)
+        else:
+            if not tasks_file:
+                tasks_file = p
+
+    if not tasks_file:
+        tasks_file = "pipeline/docs/context/Tasks_list.md"
+    if max_workers <= 0:
+        max_workers = 3
 
     repo_root = Path.cwd()
     tasks = parse_tasks_file(tasks_file)

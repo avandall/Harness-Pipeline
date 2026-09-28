@@ -87,10 +87,14 @@ init_run_lifecycle() {
   touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
 }
 
-local_repo_root="$(cd "${PIPELINE_DIR}/.." && pwd)"
-_EXTRA_PY_PATHS="${local_repo_root}"
-[[ -d "${local_repo_root}/src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${local_repo_root}/src"
-[[ -d "${local_repo_root}/app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${local_repo_root}/app"
+REPO_ROOT_DIR="$(cd "${PIPELINE_DIR}/.." && pwd)"
+if [[ ! -d "$REPO_ROOT_DIR" ]]; then
+  echo "FATAL: Could not determine project root from PIPELINE_DIR=${PIPELINE_DIR}" >&2
+  exit 1
+fi
+_EXTRA_PY_PATHS="${REPO_ROOT_DIR}"
+[[ -d "${REPO_ROOT_DIR}/src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${REPO_ROOT_DIR}/src"
+[[ -d "${REPO_ROOT_DIR}/app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${REPO_ROOT_DIR}/app"
 export PYTHONPATH="${_EXTRA_PY_PATHS}:${PYTHONPATH:-}"
 
 reap_orphans() {
@@ -101,11 +105,16 @@ reap_orphans() {
 }
 
 cleanup_on_interrupt() {
-  echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Cleaning up active worktrees & processes...${NC}"
+  echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Terminating workers & cleaning up active worktrees...${NC}"
+  # 1. Kill active workers FIRST so they do not operate on disappearing worktree directories
+  reap_orphans
+  wait 2>/dev/null || true
+
   local reg_file="${PIPELINE_DIR}/.ralph/active_worktrees.txt"
   local repo_root
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
+  # 2. Cleanup registered worktrees and branches
   if [[ -f "$reg_file" ]]; then
     while IFS='|' read -r wt br || [[ -n "$wt" ]]; do
       [[ -n "$wt" ]] && git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
@@ -123,7 +132,6 @@ cleanup_on_interrupt() {
   ACTIVE_WORKTREES=()
   ACTIVE_BRANCHES=()
 
-  reap_orphans
   exit 130
 }
 
@@ -156,13 +164,14 @@ safe_update_task_status() {
   local escaped_tid
   escaped_tid="$(printf '%s' "$task_id" | sed 's/[][\\.^$*+?{}()|/]/\\&/g')"
 
-  (
-    flock -x -w 30 200 || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
+  local lock_fd
+  {
+    flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
     # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
     sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
     # 2. Update task detail metadata block if present
     sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
-  ) 200>"$lock_file"
+  } {lock_fd}>"$lock_file"
 }
 
 safe_append_durable_log() {
@@ -172,13 +181,15 @@ safe_append_durable_log() {
   local lock_file="${PIPELINE_DIR}/.ralph/locks/durable_log.lock"
   mkdir -p "$(dirname "$lock_file")"
 
-  (
-    flock -x -w 30 201 || { log_error "Lock timeout (30s) appending to durable log $log_file"; return 1; }
+  local lock_fd
+  {
+    flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) appending to durable log $log_file"; return 1; }
     echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
-  ) 201>"$lock_file"
+  } {lock_fd}>"$lock_file"
 }
 
 wait_and_acquire_merge_lock() {
+  local lock_fd="$1"
   local lock_file="${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
   local max_total_wait="${RALPH_MERGE_MAX_WAIT:-900}" # 15 minutes max
   local interval=5
@@ -188,7 +199,7 @@ wait_and_acquire_merge_lock() {
   log_info "[MERGE-QUEUE] Waiting for serialized integration merge lock..."
 
   while (( elapsed < max_total_wait )); do
-    if flock -x -w "$interval" 202; then
+    if flock -x -w "$interval" "$lock_fd"; then
       return 0
     fi
     elapsed=$(( elapsed + interval ))
@@ -740,17 +751,17 @@ generate_commit_message() {
   local task_what=""
 
   if [[ -f "$tasks_file" && -n "$tid" ]]; then
-    # 1. Extract Task Name from table or heading
-    task_name=$(awk -F'|' -v tid="$tid" '$0 ~ tid {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}' "$tasks_file")
+    # 1. Extract Task Name from table or heading (literal string match via index)
+    task_name=$(awk -F'|' -v tid="$tid" 'index($0, tid) > 0 {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit}' "$tasks_file")
     if [[ -z "$task_name" ]]; then
-      task_name=$(awk -v tid="$tid" '$0 ~ ("^### [^ ]* " tid ":") {sub("^### [^ ]* " tid ":[ \t]*", ""); print; exit}' "$tasks_file")
+      task_name=$(awk -v tid="$tid" 'index($0, "### ") == 1 && index($0, tid) > 0 {sub(/^### [^ ]* [^:]*:[ \t]*/, ""); print; exit}' "$tasks_file")
     fi
 
     # 2. Extract Task Type from metadata
     local raw_type
     raw_type=$(awk -v tid="$tid" '
-      $0 ~ ("^### [^ ]* " tid) { found=1; next }
-      found && /^### [^ ]* TASK-/ { exit }
+      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
+      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
       found && /Task Type:/ { sub(/.*Task Type:[ \t]*/, ""); print; exit }
     ' "$tasks_file" | tr '[:upper:]' '[:lower:]' | tr -d ' \r\t')
 
@@ -765,14 +776,14 @@ generate_commit_message() {
 
     # 3. Extract Why & What from spec
     task_why=$(awk -v tid="$tid" '
-      $0 ~ ("^### [^ ]* " tid) { found=1; next }
-      found && /^### [^ ]* TASK-/ { exit }
+      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
+      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
       found && /^[ \t]*- \*\*Why:\*\*/ { sub(/^[ \t]*- \*\*Why:\*\*[ \t]*/, ""); print; exit }
     ' "$tasks_file")
 
     task_what=$(awk -v tid="$tid" '
-      $0 ~ ("^### [^ ]* " tid) { found=1; next }
-      found && /^### [^ ]* TASK-/ { exit }
+      index($0, "### ") == 1 && index($0, tid) > 0 { found=1; next }
+      found && index($0, "### ") == 1 && index($0, "TASK-") > 0 { exit }
       found && /^[ \t]*- \*\*What:\*\*/ { sub(/^[ \t]*- \*\*What:\*\*[ \t]*/, ""); print; exit }
     ' "$tasks_file")
   fi
@@ -875,7 +886,8 @@ check_and_auto_commit_done_task() {
 ensure_clean_working_tree() {
   local target_task="${1:-}"
   local auto_clean="${2:-$AUTO_CLEAN_DIRTY}"
-  local ckpt_tag="ralph-checkpoint-${target_task}"
+  local ckpt_tag=""
+  [[ -n "$target_task" ]] && ckpt_tag="ralph-checkpoint-${target_task}"
 
   if [[ -n "$(git status --porcelain --ignore-submodules=dirty 2>/dev/null)" ]]; then
     # 1. First check if there is a completed task marked [x] DONE that was not committed
@@ -1072,8 +1084,9 @@ execute_worker_for_task() {
   git -C "$worktree_dir" commit -m "$commit_msg" >/dev/null 2>&1 || true
 
   # 3. State: QUEUED_FOR_MERGE (Serialized integration queue with Solution B adaptive lock)
-  (
-    wait_and_acquire_merge_lock || {
+  local merge_fd
+  {
+    wait_and_acquire_merge_lock "$merge_fd" || {
       log_error "[MERGE-QUEUE] Worker $task failed to acquire merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
       exit 1
@@ -1111,7 +1124,20 @@ execute_worker_for_task() {
     if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
       local main_commit_msg
       main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
-      git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1
+      if [[ -z "${main_commit_msg//[[:space:]]/}" ]]; then
+        main_commit_msg="[${task}] feat(core): auto-integrated verified changes for ${task}"
+      fi
+      if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
+        if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
+          log_error "[MERGE-QUEUE] git commit failed on main for $task despite staged changes!"
+          git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
+          git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
+          safe_update_task_status "$task" "[!] BLOCKED"
+          exit 1
+        else
+          log_warn "[MERGE-QUEUE] No new changes to commit on main for $task (already integrated or no-op)."
+        fi
+      fi
       safe_update_task_status "$task" "[x] DONE"
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into main (Tier 2 PASS)."
       log_ok "🎉 [INTEGRATED] Task $task merged and verified on main ✓"
@@ -1122,7 +1148,7 @@ execute_worker_for_task() {
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on main. Reverted via reset --hard."
       log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on main. Reverted cleanly via reset --hard."
     fi
-  ) 202>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
+  } {merge_fd}>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
 }
 
 run_parallel_waves() {
@@ -1167,17 +1193,20 @@ run_parallel_waves() {
       local worktree_dir="${PIPELINE_DIR}/.ralph/worktrees/${RUN_ID}/${task}"
       local branch_name="ralph/${RUN_ID}/${task}"
 
-      mkdir -p "$(dirname "$worktree_dir")"
-      git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" main >/dev/null 2>&1 || {
-        log_error "Failed to create git worktree for $task. Skipping."
-        continue
-      }
-
+      # Write-Ahead Log: Pre-register worktree & branch so cleanup trap never misses them if Ctrl+C occurs during git worktree add
       echo "${worktree_dir}|${branch_name}" >> "$reg_file"
       ACTIVE_WORKTREES+=("$worktree_dir")
       ACTIVE_BRANCHES+=("$branch_name")
       wave_worktrees+=("$worktree_dir")
       wave_branches+=("$branch_name")
+
+      mkdir -p "$(dirname "$worktree_dir")"
+      if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" main >/dev/null 2>&1; then
+        log_error "Failed to create git worktree for $task. Skipping."
+        sed -i -E "\|^${worktree_dir}\|d" "$reg_file" 2>/dev/null || true
+        git -C "$repo_root" branch -D "$branch_name" >/dev/null 2>&1 || true
+        continue
+      fi
 
       (
         execute_worker_for_task "$worktree_dir" "$task" "$branch_name" "$repo_root"
@@ -1282,17 +1311,19 @@ else:
   local reproduce_dir="${repo_root}/tests/reproduce"
   mkdir -p "$reproduce_dir"
   local test_file="${reproduce_dir}/test_bug_reproduce.py"
+  local err_report_file="${reproduce_dir}/error_report.txt"
+
+  # Injection-safe storage: write raw error into isolated report file (Issue NEW2.8)
+  printf '%s\n' "$error_input" > "$err_report_file"
 
   local bug_prompt="[AGENTLESS-BUGFIX]
-Phát hiện lỗi sau đây cần sửa chữa triệt để:
-=== 🐛 ERROR REPORT ===
-${error_input}
-
+Phát hiện lỗi cần sửa chữa triệt để (Chi tiết lỗi lưu tại '${err_report_file}'):
 === 🎯 MỤC TIÊU ===
-1. Nếu chưa có test tái hiện: Tạo file test tại '${test_file}' để tái hiện đúng lỗi này (Test Contract Red).
-2. Sửa lỗi chính xác tại file nguồn (chỉ sửa root cause, không vá tạm bợ).
-3. Đảm bảo chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target ${test_file}' PASS 100%.
-4. Đảm bảo chạy full 'python3 pipeline/scripts/verify.py --tier 2' PASS 100% không gây regression."
+1. Đọc nội dung chi tiết lỗi từ '${err_report_file}'.
+2. Nếu chưa có test tái hiện: Tạo file test tại '${test_file}' để tái hiện đúng lỗi này (Test Contract Red).
+3. Sửa lỗi chính xác tại file nguồn (chỉ sửa root cause, không vá tạm bợ).
+4. Đảm bảo chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target ${test_file}' PASS 100%.
+5. Đảm bảo chạy full 'python3 pipeline/scripts/verify.py --tier 2' PASS 100% không gây regression."
 
   log_info "Running Agent Turn for targeted bug fix..."
   _run_agent_turn "$bug_prompt" "$PRINT_TIMEOUT" "1" "$EXECUTOR_MODEL" "BUGFIX-AGENT"
