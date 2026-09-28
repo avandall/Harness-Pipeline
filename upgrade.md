@@ -237,9 +237,13 @@ run_parallel_wave() {
         # 4. State: REBASING (An toàn vì AI đã dừng chạy)
         git -C "$worktree_dir" rebase main
         
-        # 5. Integrate vào main
-        git -C "$REPO_ROOT" checkout main
-        git -C "$REPO_ROOT" merge --squash "$branch_name"
+        # 5. Integrate vào main (REPO_ROOT luôn ở main, không checkout làm dirty state)
+        if ! git -C "$REPO_ROOT" merge --squash "$branch_name" >/dev/null 2>&1; then
+          git -C "$REPO_ROOT" reset --hard HEAD
+          git -C "$REPO_ROOT" clean -fd
+          safe_update_task_status "$task" "[!] BLOCKED"
+          exit 1
+        fi
         
         # 6. Hard Gate Tier 2 trên main (Reset hard nếu fail!)
         if PYTHONPATH="$REPO_ROOT:$PYTHONPATH" python3 pipeline/scripts/verify.py --tier 2; then
@@ -249,6 +253,7 @@ run_parallel_wave() {
         else
           # SỬA LỖI P0: Dùng reset --hard HEAD thay vì merge --abort
           git -C "$REPO_ROOT" reset --hard HEAD
+          git -C "$REPO_ROOT" clean -fd
           safe_update_task_status "$task" "[!] BLOCKED"
           log_error "[INTEGRATION FAILED] Reverted task $task via reset --hard."
         fi
@@ -427,13 +432,18 @@ run_fix_bug_flow() {
   local error_log="$1"
   log_section "AGENTLESS BUGFIX MODE"
   
-  # Bước 1: Localize (0.3s, 0 token LLM)
+  # Bước 1: Localize (0.3s, 0 token LLM, an toàn 100% không shell injection qua stdin)
   local culprit_file
-  culprit_file=$(python3 -c "
-import re, subprocess
-matches = re.findall(r'File \"(.*?)\", line (\d+), in (\w+)', '''$error_log''')
-print(matches[-1][0] if matches else '')
-")
+  culprit_file=$(printf "%s" "$error_log" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+matches = re.findall(r"File [\x22\x27](.*?(\.py|\.sh|\.json|\.ts|\.js))[\x22\x27], line (\d+)", text)
+if matches:
+    print(matches[-1][0])
+else:
+    m = re.search(r"([a-zA-Z0-9_\-\./]+\.(py|sh|json|ts|js))", text)
+    print(m.group(1) if m else "")
+' 2>/dev/null || echo "")
   log_info "🎯 Localized culprit file: $culprit_file"
 
   # Bước 2: Reproduce (Test Contract Red)

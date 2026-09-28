@@ -136,10 +136,25 @@ def extract_ast_imports_transitive(target_files: list[str], repo_root: Path, dep
                             resolved = module_to_file_path(a.name, repo_root)
                             if resolved:
                                 next_frontier.add(resolved.resolve())
-                    elif isinstance(node, ast.ImportFrom) and node.module:
-                        resolved = module_to_file_path(node.module, repo_root)
-                        if resolved:
-                            next_frontier.add(resolved.resolve())
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.level and node.level > 0:
+                            # Handle relative import (e.g. from . import x, from ..pkg import y)
+                            target_dir = f_path.parent
+                            for _ in range(node.level - 1):
+                                target_dir = target_dir.parent
+                            if node.module:
+                                rel_path = target_dir / (node.module.replace(".", "/") + ".py")
+                                if rel_path.is_file():
+                                    next_frontier.add(rel_path.resolve())
+                            else:
+                                for n in node.names:
+                                    rel_path = target_dir / f"{n.name}.py"
+                                    if rel_path.is_file():
+                                        next_frontier.add(rel_path.resolve())
+                        elif node.module:
+                            resolved = module_to_file_path(node.module, repo_root)
+                            if resolved:
+                                next_frontier.add(resolved.resolve())
             except Exception:
                 continue
 
@@ -175,6 +190,13 @@ def build_waves(tasks: list[TaskMeta], repo_root: Path, max_workers: int = 3) ->
     # Pack First-Fit Decreasing (FFD): Task nhiều file phức tạp xếp lên trước chống starvation
     tasks_sorted = sorted(tasks, key=lambda t: len(t.files), reverse=True)
 
+    # Cache normalized files & transitive AST imports to avoid O(N^2) duplicate AST walks
+    task_cache: dict[str, tuple[set[str], set[str]]] = {}
+    for task in tasks_sorted:
+        t_files = normalize_file_set(task.files, repo_root)
+        t_imports = extract_ast_imports_transitive(task.files, repo_root, depth=3)
+        task_cache[task.task_id] = (t_files, t_imports)
+
     waves: list[list[TaskMeta]] = []
     remaining = list(tasks_sorted)
 
@@ -185,8 +207,7 @@ def build_waves(tasks: list[TaskMeta], repo_root: Path, max_workers: int = 3) ->
         unassigned: list[TaskMeta] = []
 
         for task in remaining:
-            task_files = normalize_file_set(task.files, repo_root)
-            task_imports = extract_ast_imports_transitive(task.files, repo_root, depth=3)
+            task_files, task_imports = task_cache[task.task_id]
 
             # 1. Kiểm tra File Disjoint
             has_file_conflict = bool(task_files & wave_files)
@@ -208,22 +229,24 @@ def build_waves(tasks: list[TaskMeta], repo_root: Path, max_workers: int = 3) ->
         waves.append(current_wave)
         remaining = unassigned
 
+    if len(waves) == len(tasks) and len(tasks) > 1:
+        sys.stderr.write(f"[DISPATCHER NOTICE] All {len(tasks)} tasks have overlapping files or import dependencies; scheduled sequentially in {len(waves)} waves of 1 task each.\n")
+
     return waves
 
 
 def main():
-    max_workers = 3
-    tasks_file = "pipeline/docs/context/Tasks_list.md"
+    import argparse
 
-    args = sys.argv[1:]
-    idx = 0
-    while idx < len(args):
-        if args[idx].isdigit():
-            max_workers = max(1, int(args[idx]))
-        elif args[idx] == "--tasks-file" and idx + 1 < len(args):
-            tasks_file = args[idx + 1]
-            idx += 1
-        idx += 1
+    parser = argparse.ArgumentParser(description="Deterministic 0-Token Task Dispatcher")
+    parser.add_argument("tasks_file_pos", nargs="?", default="", help="Path to Tasks_list.md (positional)")
+    parser.add_argument("--tasks-file", default="", help="Path to Tasks_list.md (optional flag)")
+    parser.add_argument("--max-workers", "-w", type=int, default=3, help="Max workers per wave")
+
+    args = parser.parse_args()
+
+    tasks_file = args.tasks_file or args.tasks_file_pos or "pipeline/docs/context/Tasks_list.md"
+    max_workers = max(1, args.max_workers)
 
     repo_root = Path.cwd()
     tasks = parse_tasks_file(tasks_file)

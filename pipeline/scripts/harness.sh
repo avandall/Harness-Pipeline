@@ -86,7 +86,6 @@ init_run_lifecycle() {
   touch "${RUNTIME_DIR}/LEARNINGS.md"
   touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
 }
-init_run_lifecycle
 
 _EXTRA_PY_PATHS="."
 [[ -d "${PIPELINE_DIR}/../src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:./src"
@@ -99,18 +98,31 @@ reap_orphans() {
 
 cleanup_on_interrupt() {
   echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Cleaning up active worktrees & processes...${NC}"
+  local reg_file="${PIPELINE_DIR}/.ralph/active_worktrees.txt"
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+  if [[ -f "$reg_file" ]]; then
+    while IFS='|' read -r wt br || [[ -n "$wt" ]]; do
+      [[ -n "$wt" ]] && git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+      [[ -n "$br" ]] && git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
+    done < "$reg_file"
+    rm -f "$reg_file"
+  fi
+
   for wt in "${ACTIVE_WORKTREES[@]}"; do
-    git worktree remove --force "$wt" 2>/dev/null || true
+    git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
   done
   for br in "${ACTIVE_BRANCHES[@]}"; do
-    git branch -D "$br" 2>/dev/null || true
+    git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
   done
+
   reap_orphans
   exit 130
 }
 
 trap cleanup_on_interrupt INT TERM
-trap 'echo -e "\n${CYAN}[RALPH]${NC} Run logs archived in: ${RUN_DIR}\n💡 Run automated post-loop improvement: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
+trap '[[ -n "${RUN_DIR:-}" ]] && echo -e "\n${CYAN}[RALPH]${NC} Run logs archived in: ${RUN_DIR}\n💡 Run automated post-loop improvement: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
 
 log_info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
 log_ok()      { echo -e "${GREEN}[OK]${NC}    $*"; }
@@ -135,13 +147,15 @@ safe_update_task_status() {
 
   local clean_status
   clean_status="$(echo "$new_status" | tr -d '`')"
+  local escaped_tid
+  escaped_tid="$(printf '%s' "$task_id" | sed 's/[.[\*^$]/\\&/g')"
 
   (
     flock -x -w 30 200 || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
     # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
-    sed -i -E "s/(\|[[:space:]]*\`?${task_id}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
+    sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
     # 2. Update task detail metadata block if present
-    sed -i -E "/^### 📌 (.*)${task_id}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
+    sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
   ) 200>"$lock_file"
 }
 
@@ -161,11 +175,11 @@ safe_append_durable_log() {
 wait_and_acquire_merge_lock() {
   local lock_file="${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
   local max_total_wait="${RALPH_MERGE_MAX_WAIT:-900}" # 15 minutes max
-  local interval=50
+  local interval=5
   local elapsed=0
   mkdir -p "$(dirname "$lock_file")"
 
-  log_info "[MERGE-QUEUE] Acquiring integration merge lock (Solution B adaptive)..."
+  log_info "[MERGE-QUEUE] Waiting for serialized integration merge lock..."
 
   while (( elapsed < max_total_wait )); do
     if flock -x -w "$interval" 202; then
@@ -173,7 +187,7 @@ wait_and_acquire_merge_lock() {
     fi
     elapsed=$(( elapsed + interval ))
 
-    # Lock acquisition timed out for this interval, inspect holder PID
+    # Inspect holder PID for diagnostics only — NEVER rm lock file (breaks flock inode semantics)
     local holder_pid=""
     if command -v fuser >/dev/null 2>&1; then
       holder_pid=$(fuser "$lock_file" 2>/dev/null | awk '{print $1}' || echo "")
@@ -183,13 +197,12 @@ wait_and_acquire_merge_lock() {
 
     if [[ -n "$holder_pid" ]]; then
       if kill -0 "$holder_pid" 2>/dev/null; then
-        log_info "[MERGE-QUEUE] Lock held by active PID $holder_pid (running Tier 2 integration tests). Waiting... (${elapsed}/${max_total_wait}s)"
+        log_info "[MERGE-QUEUE] Lock held by active PID $holder_pid (running Tier 2 integration). Waiting... (${elapsed}/${max_total_wait}s)"
       else
-        log_warn "[MERGE-QUEUE] Stale lock detected! Holder PID $holder_pid is dead. Cleaning stale lock..."
-        rm -f "$lock_file"
+        log_info "[MERGE-QUEUE] Previous PID $holder_pid exited. Re-attempting lock... (${elapsed}/${max_total_wait}s)"
       fi
     else
-      log_warn "[MERGE-QUEUE] Lock file exists but no active PID found. Retrying... (${elapsed}/${max_total_wait}s)"
+      log_info "[MERGE-QUEUE] Waiting for lock... (${elapsed}/${max_total_wait}s)"
     fi
   done
 
@@ -498,9 +511,9 @@ _build_executor_payload_safe() {
   local est_tokens
   est_tokens=$(estimate_tokens_multibyte "$raw_payload")
 
-  # Safe context threshold: 12,000 tokens for system context
-  if (( est_tokens > 12000 )); then
-    log_warn "⚠️ [TOKEN BUDGET] Prompt size (${est_tokens} tokens) exceeds 12k safe limit. Proactively trimming..."
+  local token_limit="${RALPH_TOKEN_BUDGET:-12000}"
+  if (( est_tokens > token_limit )); then
+    log_warn "⚠️ [TOKEN BUDGET] Prompt size (${est_tokens} tokens) exceeds ${token_limit} safe limit. Proactively trimming..."
 
     local slim_spec
     slim_spec=$(echo "$task_spec" | head -n 25)
@@ -1070,8 +1083,13 @@ execute_worker_for_task() {
     fi
 
     # 5. Integrate to main
-    git -C "$repo_root" checkout main >/dev/null 2>&1
-    git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1
+    if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
+      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into main!"
+      git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
+      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
+      safe_update_task_status "$task" "[!] BLOCKED"
+      exit 1
+    fi
 
     # 6. Hard Gate Tier 2 on main (Reset hard if fail!)
     if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
@@ -1081,6 +1099,7 @@ execute_worker_for_task() {
       log_ok "🎉 [INTEGRATED] Task $task merged and verified on main ✓"
     else
       git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
+      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
       safe_update_task_status "$task" "[!] BLOCKED"
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on main. Reverted via reset --hard."
       log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on main. Reverted cleanly via reset --hard."
@@ -1109,6 +1128,9 @@ run_parallel_waves() {
 
   log_info "Task Dispatcher identified ${wave_count} wave(s) of disjoint tasks."
 
+  local reg_file="${PIPELINE_DIR}/.ralph/active_worktrees.txt"
+  mkdir -p "$(dirname "$reg_file")"
+
   local wave_idx=0
   while (( wave_idx < wave_count )); do
     local wave_num=$(( wave_idx + 1 ))
@@ -1133,6 +1155,7 @@ run_parallel_waves() {
         continue
       }
 
+      echo "${worktree_dir}|${branch_name}" >> "$reg_file"
       ACTIVE_WORKTREES+=("$worktree_dir")
       ACTIVE_BRANCHES+=("$branch_name")
       wave_worktrees+=("$worktree_dir")
@@ -1145,17 +1168,28 @@ run_parallel_waves() {
       log_info "Launched Worker for ${task} (PID: ${pids[-1]}, Worktree: ${worktree_dir})"
     done
 
-    # Wait for all workers in this wave
-    if [[ ${#pids[@]} -gt 0 ]]; then
-      log_info "Waiting for Wave ${wave_num} workers to finish..."
-      wait "${pids[@]}" || true
+    # Collect individual worker exit codes (Issue #4)
+    local wave_failed=0
+    for pid in "${pids[@]}"; do
+      if ! wait "$pid"; then
+        wave_failed=$(( wave_failed + 1 ))
+      fi
+    done
+    if [[ $wave_failed -gt 0 ]]; then
+      log_warn "⚠️ [WAVE ${wave_num}] ${wave_failed} worker(s) exited with failure or blocked status."
     fi
 
     # Post-Wave Integration Gate
     log_section "POST-WAVE ${wave_num} INTEGRATION GATE"
     if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
       log_error "🚨 [WAVE REGRESSION] Cross-task interaction broke full test suite! Rolling back Wave ${wave_num}..."
+      # Kill any lingering background workers before rollback (Issue #11)
+      for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || true
+      done
+      wait 2>/dev/null || true
       git -C "$repo_root" reset --hard "$wave_pre_commit"
+      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Wave ${wave_num} regression detected! Reverted to ${wave_pre_commit}."
       return 1
     fi
@@ -1168,6 +1202,7 @@ run_parallel_waves() {
     for br in "${wave_branches[@]}"; do
       git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done
+    rm -f "$reg_file"
 
     wave_idx=$(( wave_idx + 1 ))
   done
@@ -1192,16 +1227,17 @@ run_fix_bug_flow() {
     error_input=$(cat "$error_input")
   fi
 
-  culprit_file=$(python3 -c "
+  # Zero-token injection-safe traceback localization via stdin (Issue #3)
+  culprit_file=$(printf "%s" "$error_input" | python3 -c '
 import re, sys
-text = '''$error_input'''
-matches = re.findall(r'File [\"\\\'](.*?(\.py|\.sh|\.json|\.ts|\.js))[\"\\\'], line (\d+)', text)
+text = sys.stdin.read()
+matches = re.findall(r"File [\x22\x27](.*?(\.py|\.sh|\.json|\.ts|\.js))[\x22\x27], line (\d+)", text)
 if matches:
     print(matches[-1][0])
 else:
-    file_match = re.search(r'([a-zA-Z0-9_\-\./]+\.(py|sh|json|ts|js))', text)
-    print(file_match.group(1) if file_match else '')
-" 2>/dev/null || echo "")
+    file_match = re.search(r"([a-zA-Z0-9_\-\./]+\.(py|sh|json|ts|js))", text)
+    print(file_match.group(1) if file_match else "")
+' 2>/dev/null || echo "")
 
   if [[ -z "$culprit_file" ]]; then
     log_warn "Could not automatically localize culprit file from error input."
@@ -1254,7 +1290,9 @@ ${error_input}
     return 0
   else
     log_error "🚨 [BUGFIX FAILED] Bug fix did not pass Tier 2 verification. Reverting uncommitted changes..."
+    # Clean both modified and untracked files (Issue #10)
     git -C "$repo_root" checkout -- . 2>/dev/null || true
+    git -C "$repo_root" clean -fd 2>/dev/null || true
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Agentless bug fix failed verification. Changes reverted."
     return 1
   fi
@@ -1266,6 +1304,7 @@ ${error_input}
 main() {
   parse_args "$@"
   preflight_check
+  init_run_lifecycle
 
   if [[ -n "$PROVIDER_OVERRIDE" ]]; then
     export AGENT_PROVIDER="$PROVIDER_OVERRIDE"
