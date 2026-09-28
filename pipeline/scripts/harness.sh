@@ -87,12 +87,16 @@ init_run_lifecycle() {
   touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
 }
 
-_EXTRA_PY_PATHS="."
-[[ -d "${PIPELINE_DIR}/../src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:./src"
-[[ -d "${PIPELINE_DIR}/../app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:./app"
-export PYTHONPATH="${_EXTRA_PY_PATHS}:${PIPELINE_DIR}/..:${PYTHONPATH:-}"
+local_repo_root="$(cd "${PIPELINE_DIR}/.." && pwd)"
+_EXTRA_PY_PATHS="${local_repo_root}"
+[[ -d "${local_repo_root}/src" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${local_repo_root}/src"
+[[ -d "${local_repo_root}/app" ]] && _EXTRA_PY_PATHS="${_EXTRA_PY_PATHS}:${local_repo_root}/app"
+export PYTHONPATH="${_EXTRA_PY_PATHS}:${PYTHONPATH:-}"
 
 reap_orphans() {
+  if [[ -z "${RALPH_RUN_TAG:-}" ]]; then
+    return 0
+  fi
   pkill -f "$RALPH_RUN_TAG" 2>/dev/null || true
 }
 
@@ -108,14 +112,16 @@ cleanup_on_interrupt() {
       [[ -n "$br" ]] && git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done < "$reg_file"
     rm -f "$reg_file"
+  elif ((${#ACTIVE_WORKTREES[@]} > 0)); then
+    for wt in "${ACTIVE_WORKTREES[@]}"; do
+      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+    done
+    for br in "${ACTIVE_BRANCHES[@]}"; do
+      git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
+    done
   fi
-
-  for wt in "${ACTIVE_WORKTREES[@]}"; do
-    git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
-  done
-  for br in "${ACTIVE_BRANCHES[@]}"; do
-    git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
-  done
+  ACTIVE_WORKTREES=()
+  ACTIVE_BRANCHES=()
 
   reap_orphans
   exit 130
@@ -148,7 +154,7 @@ safe_update_task_status() {
   local clean_status
   clean_status="$(echo "$new_status" | tr -d '`')"
   local escaped_tid
-  escaped_tid="$(printf '%s' "$task_id" | sed 's/[.[\*^$]/\\&/g')"
+  escaped_tid="$(printf '%s' "$task_id" | sed 's/[][\\.^$*+?{}()|/]/\\&/g')"
 
   (
     flock -x -w 30 200 || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
@@ -724,6 +730,7 @@ verify_or_restore_plan_seal() {
 generate_commit_message() {
   local tid="$1"
   local mode_label="${2:-HARNESS}"
+  local git_target="${3:-.}"
   local tasks_file="${CONTEXT_DIR}/Tasks_list.md"
 
   local task_name=""
@@ -774,25 +781,25 @@ generate_commit_message() {
 
   # Determine scope from changed files if possible
   local staged_dirs
-  staged_dirs=$(git diff --cached --name-only 2>/dev/null | awk -F/ '{if (NF>1) print $1}' | grep -vE "^(pipeline|\.gitignore|\.github)" | sort | uniq | head -1)
+  staged_dirs=$(git -C "$git_target" diff --cached --name-only 2>/dev/null | awk -F/ '{if (NF>1) print $1}' | grep -vE "^(pipeline|\.gitignore|\.github)" | sort | uniq | head -1)
   if [[ -n "$staged_dirs" ]]; then
     task_scope="$staged_dirs"
-  elif git diff --cached --name-only 2>/dev/null | grep -q "pipeline"; then
+  elif git -C "$git_target" diff --cached --name-only 2>/dev/null | grep -q "pipeline"; then
     task_scope="pipeline"
   fi
 
   # Summary of changed files (up to 12 files)
   local file_changes
-  file_changes=$(git diff --cached --name-status 2>/dev/null | head -n 12 | sed 's/^/- /')
+  file_changes=$(git -C "$git_target" diff --cached --name-status 2>/dev/null | head -n 12 | sed 's/^/- /')
   local total_changed
-  total_changed=$(git diff --cached --name-only 2>/dev/null | wc -l)
+  total_changed=$(git -C "$git_target" diff --cached --name-only 2>/dev/null | wc -l)
   if (( total_changed > 12 )); then
     file_changes="${file_changes}"$'\n'"- ... and $((total_changed - 12)) more files"
   fi
 
   # Diff stat summary (e.g. 5 files changed, 120 insertions(+), 10 deletions(-))
   local stat_summary
-  stat_summary=$(git diff --cached --stat 2>/dev/null | tail -1 | sed 's/^[ \t]*//')
+  stat_summary=$(git -C "$git_target" diff --cached --stat 2>/dev/null | tail -1 | sed 's/^[ \t]*//')
 
   # Assemble full message
   cat <<EOF
@@ -1061,7 +1068,7 @@ execute_worker_for_task() {
 
   git -C "$worktree_dir" add -A
   local commit_msg
-  commit_msg=$(generate_commit_message "$task" "PARALLEL-WORKER")
+  commit_msg=$(generate_commit_message "$task" "PARALLEL-WORKER" "$worktree_dir")
   git -C "$worktree_dir" commit -m "$commit_msg" >/dev/null 2>&1 || true
 
   # 3. State: QUEUED_FOR_MERGE (Serialized integration queue with Solution B adaptive lock)
@@ -1073,6 +1080,15 @@ execute_worker_for_task() {
     }
 
     log_info "[MERGE-QUEUE] Worker $task entering serialized integration into main..."
+
+    # Assert repo_root is on branch main before doing any merge
+    local current_branch
+    current_branch=$(git -C "$repo_root" symbolic-ref --short HEAD 2>/dev/null || echo "")
+    if [[ "$current_branch" != "main" ]]; then
+      log_error "[MERGE-QUEUE] Fatal: repo_root is on branch '$current_branch', expected 'main'! Aborting integration for $task."
+      safe_update_task_status "$task" "[!] BLOCKED"
+      exit 1
+    fi
 
     # 4. State: REBASING on main
     if ! git -C "$worktree_dir" rebase main >/dev/null 2>&1; then
@@ -1093,7 +1109,9 @@ execute_worker_for_task() {
 
     # 6. Hard Gate Tier 2 on main (Reset hard if fail!)
     if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
-      git -C "$repo_root" commit -m "$commit_msg" >/dev/null 2>&1
+      local main_commit_msg
+      main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
+      git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1
       safe_update_task_status "$task" "[x] DONE"
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into main (Tier 2 PASS)."
       log_ok "🎉 [INTEGRATED] Task $task merged and verified on main ✓"
@@ -1190,7 +1208,19 @@ run_parallel_waves() {
       wait 2>/dev/null || true
       git -C "$repo_root" reset --hard "$wave_pre_commit"
       git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Wave ${wave_num} regression detected! Reverted to ${wave_pre_commit}."
+      for t in $tasks_in_wave; do
+        safe_update_task_status "$t" "[!] BLOCKED"
+      done
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Wave ${wave_num} regression detected! Reverted to ${wave_pre_commit}. Tasks in wave marked [!] BLOCKED."
+      for wt in "${wave_worktrees[@]}"; do
+        git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+      done
+      for br in "${wave_branches[@]}"; do
+        git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
+      done
+      rm -f "$reg_file"
+      ACTIVE_WORKTREES=()
+      ACTIVE_BRANCHES=()
       return 1
     fi
     log_ok "Wave ${wave_num} integration verified 100% PASS ✓"
@@ -1203,6 +1233,8 @@ run_parallel_waves() {
       git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done
     rm -f "$reg_file"
+    ACTIVE_WORKTREES=()
+    ACTIVE_BRANCHES=()
 
     wave_idx=$(( wave_idx + 1 ))
   done
@@ -1303,8 +1335,8 @@ ${error_input}
 # ────────────────────────────────────────────────────────────────────────────
 main() {
   parse_args "$@"
-  preflight_check
   init_run_lifecycle
+  preflight_check
 
   if [[ -n "$PROVIDER_OVERRIDE" ]]; then
     export AGENT_PROVIDER="$PROVIDER_OVERRIDE"

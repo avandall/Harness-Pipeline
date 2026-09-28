@@ -50,6 +50,23 @@
 | **7. Starvation do thuật toán Greedy** | **P1** | Task phức tạp (nhiều file) luôn bị đẩy về cuối cùng vì dễ conflict. | Sắp xếp **Pack First-Fit Decreasing (FFD)**: ưu tiên task lớn/nhiều file vào Wave trước. |
 | **8. Đo token thô `char/4` sai lệch tiếng Việt** | **P2** | Tiếng Việt UTF-8 ngốn ~1.5–2 chars/token, ước tính thấp 50% gây auto-compaction Exit 7. | Dùng công thức bảo thủ: `byte_count // 3` (hoặc `tiktoken` nếu có). |
 
+### 2.2. BẢNG KHẮC PHỤC CÁC ĐIỂM YẾU TỪ RE-CRITIQUE v2.1
+
+| Lỗ hổng phát hiện (Re-Critique v2.1) | Mức độ | Hậu quả nếu không sửa | Phương án xử lý dứt điểm |
+| :--- | :--- | :--- | :--- |
+| **1. Thiếu assertion `main` branch trước merge** | **CRITICAL** | Merge `--squash` nhầm vào branch khác nếu HEAD bị lệch hoặc detached. | Kiểm tra `git symbolic-ref --short HEAD == main`, abort ngay nếu lệch. |
+| **2. `reap_orphans` trước khi set `RALPH_RUN_TAG`** | **CRITICAL** | Chạy `pkill -f ""` diệt sạch mọi tiến trình trên máy nếu trap kích hoạt sớm. | Thêm guard `[[ -z "${RALPH_RUN_TAG:-}" ]] && return 0`. |
+| **3. Commit message trên main lệch ngữ cảnh diff** | **CRITICAL** | Message trên main lấy diff từ worktree trước rebase thay vì squashed diff thực. | Thêm tham số `git_target` vào `generate_commit_message` để đo đúng diff trên main. |
+| **4. Post-Wave failure làm lệch trạng thái Tasks_list** | **HIGH** | Code bị reset về pre-commit nhưng task đã lỡ ghi `[x] DONE`. | Cập nhật toàn bộ task trong wave về `[!] BLOCKED` khi post-wave gate thất bại. |
+| **5. Rò rỉ `active_worktrees.txt` khi rollback wave** | **HIGH** | File registry tồn lưu rác worktree do `return 1` nhảy cóc khối cleanup. | Đảm bảo dọn dẹp worktree/branch và xóa `active_worktrees.txt` trên cả path failure. |
+| **6. Regex escaping thiếu ký tự ERE trong sed** | **HIGH** | Task ID chứa ký tự lạ làm hỏng lệnh `sed -E` trong `safe_update_task_status`. | Dùng regex escape toàn diện: `sed 's/[][\\.^$*+?{}()|/]/\\&/g'`. |
+| **7. Double-cleanup redundancy trong trap** | **MEDIUM** | Chạy git worktree remove lặp 2 lần (file registry và mảng memory). | Ưu tiên registry file, fallback mảng memory, reset mảng rỗng sau dọn dẹp. |
+| **8. Thiếu bảo vệ duplicate `task_id` trong parser** | **MEDIUM** | Task trùng ID gây ghi đè cache và lập lịch wave sai lệch. | Thêm `seen_ids` kiểm tra và cảnh báo stderr trong `task_dispatcher.py`. |
+| **9. Thứ tự gọi lifecycle vs preflight** | **MEDIUM** | Preflight chạy trước khi runtime dirs và `RALPH_RUN_TAG` được khởi tạo. | Đảo thứ tự: `init_run_lifecycle` trước `preflight_check`. |
+| **10. Ranh giới logic coupling AST chưa rõ ràng** | **MEDIUM** | Mơ hồ giữa shared read-only imports và read-write hazard. | Quy định rõ: Cho phép shared read-only module; chặn triệt để read-write conflict. |
+| **11. `_EXTRA_PY_PATHS` relative path `.`** | **LOW** | Relative path gây lệch module lookup khi cd vào worktrees khác. | Chuyển thành đường dẫn tuyệt đối chuẩn hóa theo `PIPELINE_DIR`. |
+| **12. Docstring usage outdated trong dispatcher** | **LOW** | Ví dụ trong docstring không khớp cú pháp `argparse` mới. | Đồng bộ docstring khớp 100% cú pháp CLI `argparse`. |
+
 ---
 
 ## 3. CHI TIẾT 7 TRỤ CỘT KÈM PSEUDO-CODE REVIEW

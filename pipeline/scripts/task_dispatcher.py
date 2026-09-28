@@ -5,8 +5,9 @@ Phân tích phụ thuộc Task, tập file can thiệp (Target Files) và đồ 
 để gom các task thành các Waves chạy song song an toàn, không xung đột file/logic.
 
 Usage:
-  python3 pipeline/scripts/task_dispatcher.py [MAX_WORKERS]
-  python3 pipeline/scripts/task_dispatcher.py 3 --tasks-file pipeline/docs/context/Tasks_list.md
+  python3 pipeline/scripts/task_dispatcher.py [TASKS_FILE] [--max-workers N]
+  python3 pipeline/scripts/task_dispatcher.py pipeline/docs/context/Tasks_list.md --max-workers 3
+  python3 pipeline/scripts/task_dispatcher.py --tasks-file pipeline/docs/context/Tasks_list.md -w 3
 """
 
 import ast
@@ -42,6 +43,7 @@ def parse_tasks_file(file_path: str) -> list[TaskMeta]:
         return []
 
     tasks = []
+    seen_ids = set()
     lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
 
     for line in lines:
@@ -66,6 +68,12 @@ def parse_tasks_file(file_path: str) -> list[TaskMeta]:
         if not task_id_match:
             continue
         task_id = task_id_match.group(0)
+
+        # Chống trùng lặp task_id trong cùng một tasks list
+        if task_id in seen_ids:
+            sys.stderr.write(f"[DISPATCHER WARN] Duplicate task ID '{task_id}' detected in tasks file. Skipping duplicate.\n")
+            continue
+        seen_ids.add(task_id)
 
         scope = parts[1] if len(parts) > 1 else ""
         files_raw = parts[2] if len(parts) > 2 else ""
@@ -213,6 +221,11 @@ def build_waves(tasks: list[TaskMeta], repo_root: Path, max_workers: int = 3) ->
             has_file_conflict = bool(task_files & wave_files)
 
             # 2. Kiểm tra AST Transitive Logic Coupling
+            # Dependency Safety Boundary:
+            # - Read-only shared imports (task_imports & wave_transitive_imports): ALLOWED concurrently,
+            #   bởi vì nhiều worker cùng import một module chung (như config/utils) nhưng không ai sửa nó.
+            # - Read-write conflict (task_imports & wave_files HOẶC wave_transitive_imports & task_files):
+            #   BLOCKED vì một task sửa đổi file mà task kia đang phụ thuộc vào (nguy cơ race / semantic drift).
             has_logic_coupling = bool(task_imports & wave_files) or bool(wave_transitive_imports & task_files)
 
             if not has_file_conflict and not has_logic_coupling and len(current_wave) < max_workers:
