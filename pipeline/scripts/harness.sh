@@ -675,6 +675,8 @@ sync_venv_dependencies() {
 
 preflight_check() {
   log_section "PRE-FLIGHT CHECK"
+  local errors=0
+
   # Check Bash version (Bash 4.1+ required for dynamic file descriptors {fd}>file)
   if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
     log_error "Bash 4.1+ is required for Ralph Loop concurrency features (detected: ${BASH_VERSION})."

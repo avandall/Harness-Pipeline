@@ -100,6 +100,12 @@
 | **10. Tên biến `REPO_ROOT_DIR` dễ xung đột env** | **LOW** | Trùng với biến môi trường của user khi source script. | Đổi tên biến nội bộ thành `_RALPH_REPO_ROOT`. |
 | **11. Quy chuẩn commit message** | **LOW** | Thiếu convention scope trong commit. | Chuẩn hóa toàn bộ commit message theo `fix(pipeline): ...`. |
 
+### 2.5. BẢNG KHẮC PHỤC SHOWSTOPPER TỪ RE-CRITIQUE v2.4
+
+| Lỗ hổng phát hiện (Re-Critique v2.4) | Mức độ | Hậu quả nếu không sửa | Phương án xử lý dứt điểm |
+| :--- | :--- | :--- | :--- |
+| **1. Unbound variable `errors` trong `preflight_check`** | **SHOWSTOPPER** | `set -u` kích hoạt crash script ngay tại `errors: unbound variable`. | Khôi phục `local errors=0` ngay đầu hàm `preflight_check`. |
+
 ---
 
 ## 3. CHI TIẾT 7 TRỤ CỘT KÈM PSEUDO-CODE REVIEW
