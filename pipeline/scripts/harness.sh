@@ -86,6 +86,7 @@ init_run_lifecycle() {
   touch "${RUNTIME_DIR}/DECISIONS_LOG.md"
   touch "${RUNTIME_DIR}/LEARNINGS.md"
   touch "${RUNTIME_DIR}/PROGRESS_LOG.md"
+  touch "${RUNTIME_DIR}/REJECTED_RULES.md"
 }
 
 _RALPH_REPO_ROOT="$(cd "${PIPELINE_DIR}/.." && pwd)"
