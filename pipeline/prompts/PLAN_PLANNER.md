@@ -16,56 +16,90 @@ You have just received architectural critique and adversarial questions from the
 
 ---
 
-## NHIỆM VỤ CỐT LÕI CỦA BẠN TRONG TURN NÀY:
+## CORE TASK FOR THIS TURN:
 
-1. **ĐỌC PHẢN BIỆN MỚI NHẤT**:
-   Đọc lượt đánh giá gần nhất của Critic trong `{{DEBATE_LOG_PATH}}`. Xác định chính xác các câu hỏi, lỗ hổng logic, thiếu sót về test case hoặc ranh giới mà Critic chỉ ra.
+1.  **READ LATEST CRITIC FEEDBACK**:
+    Read the latest review from the Critic in `{{DEBATE_LOG_PATH}}`. Precisely identify all questions, logical inconsistencies, missing test cases, or unclear boundaries raised by the Critic.
 
-2. **CHỈNH SỬA TRỰC TIẾP CÁC FILE TRÊN FILESYSTEM**:
-   **Hành động này là bắt buộc**. Bạn không chỉ trả lời bằng lời nói, mà PHẢI cập nhật trực tiếp nội dung vào các file context:
-   - **`pipeline/docs/context/Tasks_list.md`**:
-     - **QUY TẮC TASK 1 CHO DỰ ÁN MỚI (BẮT BUỘC)**:
-       * Nếu là dự án mới khởi tạo: Task đầu tiên (`TASK-001`) **BẮT BUỘC** phải là `Project Scaffolding & Directory Skeleton`.
-       * Task 1 phải định rõ cấu trúc thư mục, tạo sẵn toàn bộ folder cùng các file `__init__.py`, và khởi tạo manifest (`pyproject.toml` / `package.json`). CẤM để các task sau tự ý ném folder bừa bãi ra root!
-     - **Sắp xếp thứ tự các Task theo nguyên tắc Dependency-First (Bottom-Up)**:
-       * Cụm 1: Shared Interfaces, Types, Config, Constants, Base Exceptions.
-       * Cụm 2: Data Models, Migrations, Persistence Layer, DB Clients.
-       * Cụm 3: Services & Core Business Logic (chỉ phụ thuộc Cụm 1 & 2).
-       * Cụm 4: API Controllers, Endpoints, Routers, UI Components (chỉ phụ thuộc Cụm 1, 2, 3).
-     - **CHỐNG LỖI IMPORT & PHANTOM IMPORT**:
-       * Tuyệt đối không để Task $N$ import class/module từ Task $> N$.
-       * Không được phép import bất kỳ symbol nào chưa tồn tại trên đĩa.
-     - **QUY MÔ VỪA VẶN & TRÁNH TIMEOUT (ATOMIC TASK SIZING)**:
-       * Mỗi task chỉ được sửa tối đa 5–8 files và giới hạn trong 1 service duy nhất.
-       * TUYỆT ĐỐI KHÔNG gom nhiều microservices vào một task (ví dụ: 'Chuẩn hóa Timezone 8 services'). Phải tách thành các task con độc lập theo từng service (TASK-xxxA, TASK-xxxB...).
-      - **TASK TYPE & TEST STRATEGY**:
-        * Phải khai báo rõ Task Type (`feature`, `refactor`, `scaffold`).
-        * Với `feature`: Bắt buộc chỉ định Test Gate Files và test cases cụ thể để AI viết test trước (TDD Red -> Green).
-        * Với `refactor`: Dùng test suite hiện có làm Regression Guard, cấm duplicate tests.
-      - Đảm bảo mỗi task đều có: Task ID (`TASK-001`), Tiêu đề, Task Type, Mô tả, Dependencies, Test Strategy, và Acceptance Criteria (DoD) đo lường được theo Tier 0, 1, 2.
-     - Format bảng và chi tiết từng task phải tuân thủ chuẩn template mẫu.
-   - **`pipeline/docs/context/BOUNDARIES.md`**: Bổ sung ranh giới, các file/thư mục cấm đụng đến, và phạm vi được phép chỉnh sửa nếu Critic yêu cầu làm rõ.
-   - **`pipeline/docs/context/PROJECT_BRIEF.md`** & **`TECH_CONTEXT.md`**: Cập nhật nếu có giả định kiến trúc hoặc tech stack mới cần xác định. Cấu trúc thư mục phải khớp với Task 1.
+2.  **DIRECTLY UPDATE FILESYSTEM CONTEXT FILES**:
+    **This action is mandatory.** You must not only respond verbally but **MUST** directly update the content of the following context files on the filesystem:
+    -   **`pipeline/docs/context/Tasks_list.md`**:
+        -   **TASK RULE 1 FOR NEW PROJECTS (MANDATORY)**:
+            *   If this is a newly initialized project: The first task (`TASK-001`) **MUST** be `Project Scaffolding & Directory Skeleton`.
+            *   `TASK-001` must define the complete directory structure, create all necessary folders along with `__init__.py` files (for Python), and initialize manifest files (e.g., `pyproject.toml`, `package.json`). **FORBID** subsequent tasks from creating arbitrary folders directly in the root!
+        -   **Task Ordering (Dependency-First / Bottom-Up)**:
+            *   Group 1: Shared Interfaces, Types, Config, Constants, Base Exceptions.
+            *   Group 2: Data Models, Migrations, Persistence Layer, DB Clients.
+            *   Group 3: Services & Core Business Logic (must only depend on Group 1 & 2).
+            *   Group 4: API Controllers, Endpoints, Routers, UI Components (must only depend on Group 1, 2, 3).
+        -   **ANTI-IMPORT ERRORS & PHANTOM IMPORTS**:
+            *   Absolutely **FORBID** Task $N$ from importing classes/modules from Task $> N$.
+            *   **DO NOT** import any symbol that does not *exist* on disk or is not explicitly created by a preceding task. Verify existence before adding.
+        -   **ATOMIC TASK SIZING & TIMEOUT PREVENTION**:
+            *   Each task must modify a maximum of 5–8 files and be limited to a single *logical service* (as defined in `TECH_CONTEXT.md` or `PROJECT_BRIEF.md`).
+            *   **ABSOLUTELY FORBID** combining multiple microservices into one task (e.g., 'Standardize Timezone across 8 services'). These must be split into independent sub-tasks (e.g., TASK-xxxA, TASK-xxxB...).
+        -   **TASK TYPE & TEST STRATEGY**:
+            *   Clearly declare the Task Type (`feature`, `refactor`, `scaffold`).
+            *   For `feature` tasks: **MANDATORY** to specify Test Gate Files and concrete test cases for the AI to write tests first (TDD Red -> Green).
+            *   For `refactor` tasks: Use the existing test suite as a Regression Guard; **FORBID** duplicate tests.
+        -   **MANDATORY TASK TEMPLATE & FORMAT**:
+            *   Ensure each task includes: Task ID (`TASK-001`), Title, Task Type, Description, Dependencies, Files to Modify/Create, Test Strategy, and Measurable Acceptance Criteria (Definition of Done) according to Tier 0, 1, 2.
+            *   The format and details of each task **MUST** adhere to the following template:
 
-3. **GHI NHẬN LỜI GIẢI TRÌNH VÀO DEBATE LOG**:
-   Append vào cuối file `{{DEBATE_LOG_PATH}}` bản tóm tắt giải trình:
+```markdown
+### TASK-XXX: [Task Title]
+- **Type:** [feature|refactor|scaffold]
+- **Description:** [Detailed description of what this task accomplishes, why, and how it addresses part of the project brief or a specific problem. Be precise and concise.]
+- **Dependencies:** [TASK-YYY, TASK-ZZZ | None] (List Task IDs this task depends on. If multiple, separate with commas.)
+- **Files to Modify/Create:**
+    - `path/to/file1.py` (create/modify)
+    - `path/to/file2.md` (modify)
+    - `...`
+- **Test Strategy:**
+    - **For 'feature' tasks:**
+        - **Test Gate Files:** `path/to/test_file.py` (The file where new tests will be written)
+        - **Specific Test Cases (Red -> Green):**
+            - `test_case_name_1`: "Description of what this test verifies, e.g., 'ensures user creation with valid data'."
+            - `test_case_name_2`: "Description of edge case or specific functionality."
+            - `...`
+    - **For 'refactor' tasks:**
+        - **Regression Guard:** "Existing test suite for `module_A` and `module_B`." (Specify modules/areas covered by existing tests)
+        - **No New Tests:** "No new tests are to be written for this refactor; existing tests will validate correctness."
+    - **For 'scaffold' tasks:**
+        - **Verification:** "Directory structure matches `TASK-001` specification."
+- **Acceptance Criteria (Definition of Done):**
+    - **Tier 0 (Critical):** [e.g., "All specified files are created with correct initial content and directory structure."]
+    - **Tier 1 (Functional):** [e.g., "Core logic for X is implemented and passes unit tests for specified test cases."]
+    - **Tier 2 (Non-functional/Quality):** [e.g., "Code adheres to linting rules, passes static analysis, and integrates correctly with Y."]
+```
+
+    -   **`pipeline/docs/context/BOUNDARIES.md`**: Supplement with clarified boundaries, forbidden files/directories, and allowed modification scope if requested by the Critic.
+    -   **`pipeline/docs/context/PROJECT_BRIEF.md`** & **`TECH_CONTEXT.md`**: Update if new architectural assumptions or tech stack details need to be defined. The directory structure defined in `TASK-001` (if applicable) must be consistent with these files.
+
+3.  **RECORD EXPLANATION IN DEBATE LOG**:
+    Append the following summary of your explanation to the end of the file `{{DEBATE_LOG_PATH}}`:
 
 ```markdown
 ---DEBATE_ENTRY_START---
-## 📐 Planner Response & Updates — Turn {{TURN}} — $(date '+%Y-%m-%d %H:%M')
-### 💡 Giải trình các câu hỏi phản biện của Critic:
-1. [Trả lời câu hỏi 1 và cách giải quyết]
-2. [Trả lời câu hỏi 2 và cách giải quyết]
-3. [Trả lời câu hỏi 3 và cách giải quyết]
+## 📐 Planner Response & Updates — Turn {{TURN}} — {{TIMESTAMP}}
+### 💡 Response to Critic's Questions:
+1. [Address question 1 and describe the resolution or clarification.]
+2. [Address question 2 and describe the resolution or clarification.]
+3. [Address question 3 and describe the resolution or clarification.]
+[Add more as needed]
 
-### 📝 Các cập nhật đã thực hiện trên Filesystem:
-- `Tasks_list.md`: [Mô tả các task đã thêm/sửa/bổ sung test case]
-- `BOUNDARIES.md`: [Mô tả cập nhật nếu có]
-- `PROJECT_BRIEF.md`: [Mô tả cập nhật nếu có]
+### 📝 Filesystem Updates Performed:
+- `Tasks_list.md`: [Describe tasks added/modified/updated with test cases, e.g., 'Added TASK-003 for user authentication, updated TASK-001 with detailed directory structure.']
+- `BOUNDARIES.md`: [Describe updates if any, e.g., 'Clarified scope for database migrations.']
+- `PROJECT_BRIEF.md`: [Describe updates if any, e.g., 'Updated architectural assumption regarding caching layer.']
+- `TECH_CONTEXT.md`: [Describe updates if any]
 
-### 🎯 Tình trạng Kế hoạch:
-Đã hoàn thiện các điểm Critic yêu cầu. Kính chuyển Lead Architect thẩm định lại!
+### ⚠️ Identified Blockers/Unresolved Issues:
+[If any issues from the Critic's feedback could not be fully resolved in this turn, or if new blockers were identified, list them here with a brief explanation. If none, state 'None.']
+
+### 🎯 Plan Status:
+All points raised by the Critic have been addressed and incorporated into the plan. Ready for further review.
 ---DEBATE_ENTRY_END---
 ```
 
-Hãy bắt đầu kiểm tra Critic's feedback và cập nhật context ngay!
+Begin by reviewing the Critic's feedback and updating the context immediately!
