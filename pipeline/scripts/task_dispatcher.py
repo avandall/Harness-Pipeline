@@ -13,7 +13,6 @@ Usage:
 
 import ast
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -164,7 +163,7 @@ def extract_ast_imports_transitive(target_files: list[str], repo_root: Path, dep
                             resolved = module_to_file_path(node.module, repo_root)
                             if resolved:
                                 next_frontier.add(resolved.resolve())
-            except Exception:
+            except (OSError, SyntaxError, UnicodeDecodeError):
                 continue
 
         frontier_files = next_frontier
