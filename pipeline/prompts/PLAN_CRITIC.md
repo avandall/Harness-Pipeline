@@ -42,12 +42,17 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
   * **Microservice scope limit:** ABSOLUTELY FORBIDDEN for a single task to touch multiple microservices simultaneously (e.g., forbid tasks like 'Standardize Timezone/Config for all microservices').
   * **IF AN OVERSIZED TASK IS DETECTED (>8 files or multi-service):** MANDATORY REJECT and require the Planner to break it down into independent sub-tasks per service (e.g., TASK-xxxA for Core/Shared Library, TASK-xxxB for Service 1, TASK-xxxC for Service 2...). Each task must be designed to complete and verify successfully within 15–20 minutes.
 
-### 4. Acceptance Criteria & Test Strategy per Task Type (Measurable DoD)
+### 4. Acceptance Criteria & Test Strategy per Task Type (Measurable DoD & Table Integrity)
+- **Check `Tasks_list.md` Structure Integrity (MANDATORY)**:
+  * **Section 1: `## 1. Task Queue & Backlog Overview`** MUST exist and contain the full 7-column table (`Task ID`, `Domain/Scope`, `Target Files / Dirs`, `Test Target`, `Ưu tiên`, `Trạng thái`, `Ghi chú / Blocker`). Columns 3 (`Target Files`) and 4 (`Test Target`) CANNOT be empty or `-`.
+  * **Section 2: `## 2. Chi tiết các Tasks (Task Specs)`** MUST format every task with `### 📌 TASK-XXX:` followed by Metadata, Why & What, Test Strategy, Acceptance Criteria, and Scope.
+  * **IF SECTION 1 TABLE IS MISSING OR INCOMPLETE:** MANDATORY REJECT! The table is required by `task_dispatcher.py` and `harness.sh`.
 - EACH TASK in `Tasks_list.md` MUST clearly define its `Task Type` (`feature`, `refactor`, `scaffold`):
   - **For 'feature' tasks:** MANDATORY to have a list of test cases and specify 'Test Gate Files' (create tests first following TDD contract Red ➔ Green).
   - **For 'refactor' tasks:** ABSOLUTELY NO test duplication; use the existing test suite as a Regression Guard (require no reduction in the number of passing tests).
   - **For 'scaffold' / 'setup' tasks:** Check manifest, layout, and lint/typecheck.
   - Acceptance criteria (DoD) should allow for automated checks across Tier 0 (lint/type), Tier 1 (targeted tests), Tier 2 (full regression).
+
 
 ### 5. Dependency-First & Import Integrity (Prevent Import Errors & Circular Dependencies)
 - **Check task dependency graph**:

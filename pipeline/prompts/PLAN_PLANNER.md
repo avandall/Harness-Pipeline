@@ -42,35 +42,57 @@ You have just received architectural critique and adversarial questions from the
             *   Clearly declare the Task Type (`feature`, `refactor`, `scaffold`).
             *   For `feature` tasks: **MANDATORY** to specify Test Gate Files and concrete test cases for the AI to write tests first (TDD Red -> Green).
             *   For `refactor` tasks: Use the existing test suite as a Regression Guard; **FORBID** duplicate tests.
-        -   **MANDATORY TASK TEMPLATE & FORMAT**:
-            *   Ensure each task includes: Task ID (`TASK-001`), Title, Task Type, Description, Dependencies, Files to Modify/Create, Test Strategy, and Measurable Acceptance Criteria (Definition of Done) according to Tier 0, 1, 2.
-            *   The format and details of each task **MUST** adhere to the following template:
+        -   **MANDATORY DUAL-SECTION FORMAT FOR `Tasks_list.md` (STRICT REQUIREMENT)**:
+            *   `Tasks_list.md` MUST maintain two synchronized sections. **NEVER DELETE OR OMIT SECTION 1**:
+                1.  **Section 1: `## 1. Task Queue & Backlog Overview` (Markdown Table)**:
+                    *   MUST contain an overview table with all 7 columns:
+                        `| Task ID | Domain/Scope | Target Files / Dirs | Test Target | Ưu tiên | Trạng thái | Ghi chú / Blocker |`
+                    *   **Target Files / Dirs (Col 3)**: List target files explicitly (e.g. `src/auth.py, src/models.py`). Used by `task_dispatcher.py` for parallel wave scheduling.
+                    *   **Test Target (Col 4)**: Exact test file (e.g. `tests/test_auth.py`) or `static_check`. Required by `plan.sh check`.
+                    *   **Trạng thái (Col 6)**: `[ ] TODO` for new tasks.
+                2.  **Section 2: `## 2. Chi tiết các Tasks (Task Specs)` (Detailed Specifications)**:
+                    *   Each task MUST follow the standard specification block:
 
 ```markdown
-### TASK-XXX: [Task Title]
-- **Type:** [feature|refactor|scaffold]
-- **Description:** [Detailed description of what this task accomplishes, why, and how it addresses part of the project brief or a specific problem. Be precise and concise.]
-- **Dependencies:** [TASK-YYY, TASK-ZZZ | None] (List Task IDs this task depends on. If multiple, separate with commas.)
-- **Files to Modify/Create:**
-    - `path/to/file1.py` (create/modify)
-    - `path/to/file2.md` (modify)
-    - `...`
-- **Test Strategy:**
-    - **For 'feature' tasks:**
-        - **Test Gate Files:** `path/to/test_file.py` (The file where new tests will be written)
-        - **Specific Test Cases (Red -> Green):**
-            - `test_case_name_1`: "Description of what this test verifies, e.g., 'ensures user creation with valid data'."
-            - `test_case_name_2`: "Description of edge case or specific functionality."
-            - `...`
-    - **For 'refactor' tasks:**
-        - **Regression Guard:** "Existing test suite for `module_A` and `module_B`." (Specify modules/areas covered by existing tests)
-        - **No New Tests:** "No new tests are to be written for this refactor; existing tests will validate correctness."
-    - **For 'scaffold' tasks:**
-        - **Verification:** "Directory structure matches `TASK-001` specification."
-- **Acceptance Criteria (Definition of Done):**
-    - **Tier 0 (Critical):** [e.g., "All specified files are created with correct initial content and directory structure."]
-    - **Tier 1 (Functional):** [e.g., "Core logic for X is implemented and passes unit tests for specified test cases."]
-    - **Tier 2 (Non-functional/Quality):** [e.g., "Code adheres to linting rules, passes static analysis, and integrates correctly with Y."]
+### 📌 TASK-XXX: [Task Name]
+
+#### Metadata
+```
+Task ID:         TASK-XXX
+Task Name:       [Short Descriptive Name]
+Phase:           Phase X
+Task Type:       feature | refactor | scaffold
+Priority:        P0 | P1 | P2
+Trạng thái:      [ ] TODO
+Ngày tạo:        [YYYY-MM-DD]
+```
+
+#### Bối cảnh & Mục tiêu (Why & What)
+- **Why:** [Technical/business rationale]
+- **What:** [Concrete technical changes to implement]
+
+#### Test Strategy & Hàng rào kiểm thử
+- **Strategy:** [For feature: TDD Contract Red -> Green; For refactor: Regression Guard]
+- **Test Gate Files:** `tests/test_xxx.py` (or `static_check`)
+- **Specific Test Cases:**
+  - `test_case_1`: "Validates primary functional contract"
+  - `test_case_2`: "Validates edge cases / failure modes"
+
+#### Acceptance Criteria (Tiêu chí hoàn thành)
+- [ ] [Functional requirement 1]
+- [ ] Tier 1 (targeted test) pass 100%.
+- [ ] Tier 2 (full regression suite) pass 100%.
+
+#### Scope (Phạm vi)
+- **Files được sửa/tạo:** `src/xxx.py`, `tests/test_xxx.py` (max 5-8 files)
+- **Files cấm đụng:** `.env`, files outside task scope
+
+#### Verification Commands
+```bash
+python3 pipeline/scripts/verify.py --tier 0
+python3 pipeline/scripts/verify.py --tier 1 --test-target tests/test_xxx.py
+python3 pipeline/scripts/verify.py --tier 2
+```
 ```
 
     -   **`pipeline/docs/context/BOUNDARIES.md`**: Supplement with clarified boundaries, forbidden files/directories, and allowed modification scope if requested by the Critic.

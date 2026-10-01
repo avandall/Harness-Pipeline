@@ -1,16 +1,141 @@
 #!/usr/bin/env bash
 # =============================================================================
 # harness.sh — Next-Gen Ralph Loop Master Orchestrator (2026 Standard)
+# Tự động hóa 100% vòng lặp AI: Code -> Verify -> Review -> Commit -> Progress
 # Optimized for: Antigravity / Agy Pro Subscription Quota
 #
-# Combines:
-#   - Task-Bound Continuous Sessions & JIT Memory Flush (Token-efficient)
-#   - Tier 1 Deterministic Verification (verify.py) + Tier 2 Cognitive Review (--review-model)
-#   - Discrete POSIX Exit Codes (0: Done, 3: Blocked, 4: Max Iters, 6: Stuck, 7: Compaction, 8: Provider)
-#   - Context Auto-Compaction Hard-Fail Protection
-#   - Circuit Breaker & Transient API Backoff Retry
-#   - Plan Seal Integrity Checks
-#   - Automated Run Logging & Retro Hooks (.ralph/runs/<RUN_ID>/)
+# -----------------------------------------------------------------------------
+# CÚ PHÁP SỬ DỤNG (USAGE):
+#   ./pipeline/scripts/harness.sh [OPTIONS]
+#
+# -----------------------------------------------------------------------------
+# DANH SÁCH TẤT CẢ THAM SỐ & CỜ (ALL CLI FLAGS & OPTIONS):
+#
+# [Task & Phạm vi thực thi]
+#   --tasks, --task, -t RANGE
+#       Lọc danh sách task cần chạy từ Tasks_list.md.
+#       Hỗ trợ:
+#         - Dải số liên tục: "1..5", "10..15"
+#         - Danh sách rời rạc: "1,3,7"
+#         - Task ID cụ thể: "TASK-001" hoặc "001"
+#         - Kết hợp: "1..3,5,8..10"
+#       (Mặc định: chạy tuần tự tất cả các task [ ] TODO trong queue)
+#
+#   --max-iter, -n N
+#       Số vòng lặp tối đa (Max iterations) trước khi dừng loop an toàn.
+#       (Mặc định: 30 | Env: $RALPH_MAX_ITERATIONS)
+#
+#   --one-go
+#       Chế độ One-Go: Yêu cầu Agent hoàn thành toàn bộ queue task trong một
+#       lần invoke duy nhất thay vì chia nhỏ từng task một lượt.
+#       (Mặc định: tắt (0) | Env: $RALPH_ONE_GO=1)
+#
+# [Chế độ Song song & Sửa lỗi độc lập]
+#   --parallel, -p [NUM]
+#       Kích hoạt chế độ chạy song song theo Wave độc lập (Git Worktrees).
+#       Tự động gom nhóm các task không phụ thuộc, chạy trên branch cô lập,
+#       serialize merge vào main và kiểm thử tích hợp (Tier 2 Integration Gate).
+#       NUM: Số worker song song tối đa (mặc định: 3 | Env: $RALPH_MAX_WORKERS).
+#
+#   --fix-bug, --bug "MSG" | FILE
+#       Kích hoạt Agentless Bug Fix Workflow (tách biệt khỏi Tasks_list.md):
+#       Tự động phân tích stacktrace/lỗi từ chuỗi text hoặc file log ->
+#       Tạo test tái hiện lỗi cô lập (Reproduce Test Red) -> Sửa root cause ->
+#       Kiểm thử xác minh (Tier 1 & Tier 2 Green) -> Auto-commit vào main.
+#
+# [Mô hình & Provider]
+#   --model, -m MODEL
+#       Mô hình AI chỉ định cho Executor Agent (ví dụ: claude-sonnet-4-6, gemini-2.5-pro).
+#       (Mặc định: lấy từ $RALPH_MODEL hoặc cấu hình mặc định của CLI Provider)
+#
+#   --provider NAME
+#       Công cụ CLI Agent điều khiển (mặc định: agy | hỗ trợ: agy, claude, codex, v.v.).
+#       Ghi đè biến môi trường $AGENT_PROVIDER.
+#
+#   --timeout TIME
+#       Thời gian giới hạn tối đa cho một lượt Agent Executor chạy (per-turn timeout).
+#       (Mặc định: 15m0s)
+#
+# [Dual-Model Review (Phản biện nhận thức)]
+#   --review-model, -r MODEL
+#       Bật chế độ Dual-Model Review: Sau khi Executor hoàn thành và pass Tier 1,
+#       một model độc lập (ví dụ: o3-mini, claude-3-7-sonnet) sẽ review diff,
+#       bảo đảm logic, security, và kiến trúc trước khi commit.
+#       (Mặc định: tắt — Single-Model mode)
+#
+#   --review-effort EFFORT
+#       Mức độ suy luận (Reasoning effort) của Reviewer Model: low | medium | high.
+#       (Mặc định: medium | Env: $RALPH_REVIEW_EFFORT)
+#
+#   --review-timeout TIME
+#       Thời gian timeout cho bước review phản biện.
+#       (Mặc định: 5m0s)
+#
+# [Kiểm soát an toàn & Môi trường làm việc]
+#   --stop-on-block
+#       Chế độ nghiêm ngặt: Dừng toàn bộ vòng lặp ngay khi phát hiện blocker
+#       (file runtime/BLOCKED.md hoặc runtime/STOP.md xuất hiện).
+#       (Mặc định: false — ghi nhận blocker và thử task tiếp theo nếu hợp lệ)
+#
+#   --no-auto-clean
+#       Giữ lại các file bẩn/uncommitted changes khi bắt đầu task mới hoặc bị ngắt.
+#       (Mặc định: tự động stash backup và dọn sạch workspace | Env: $RALPH_AUTO_CLEAN)
+#
+#   --dry-run, -d
+#       Chạy mô phỏng (Dry run): Kiểm tra flow, resolve task, in cấu hình nhưng
+#       không gọi Agent thực tế và không sửa đổi source code.
+#
+#   --verbose, -v
+#       Bật chế độ log chi tiết quá trình thực thi, token estimate và git state.
+#
+#   --help, -h
+#       Hiển thị hướng dẫn sử dụng và danh sách tham số.
+#
+# -----------------------------------------------------------------------------
+# BIẾN MÔI TRƯỜNG TƯƠNG THÍCH (ENVIRONMENT VARIABLES):
+#   RALPH_MAX_ITERATIONS   Số iteration tối đa (mặc định: 30)
+#   RALPH_NO_PROGRESS      Ngưỡng circuit breaker số lần lặp không có commit (mặc định: 10)
+#   RALPH_API_MAX          Số lần retry tối đa khi gặp lỗi API/5xx liên tiếp (mặc định: 5)
+#   RALPH_API_BACKOFF      Thời gian sleep backoff tính bằng giây khi gặp lỗi API (mặc định: 20s)
+#   RALPH_MODEL            Mô hình mặc định cho Executor
+#   RALPH_REVIEW_EFFORT    Độ sâu suy luận review: low | medium | high (mặc định: medium)
+#   RALPH_MAX_WORKERS      Số worker song song tối đa trong wave parallel (mặc định: 3)
+#   RALPH_MERGE_MAX_WAIT   Thời gian tối đa chờ merge lock tính bằng giây (mặc định: 900s)
+#   RALPH_AUTO_CLEAN       Tự động dọn dẹp git uncommitted dirty changes (mặc định: true)
+#   RALPH_ONE_GO           Chế độ chạy trọn vẹn một lần (0: tắt, 1: bật)
+#   AGENT_PROVIDER         CLI Provider mặc định (mặc định: agy)
+#
+# -----------------------------------------------------------------------------
+# MÃ THOÁT POSIX (EXIT CODES — Xem chi tiết docs/core/EXIT_CODES.md):
+#   0    Thành công (All tasks complete & verified 100% PASS)
+#   2    Lỗi tham số dòng lệnh (Unknown CLI option / Invalid arguments)
+#   3    Bị chặn (Handbrake triggered: STOP.md hoặc BLOCKED.md)
+#   4    Chạm ngưỡng vòng lặp tối đa (Max iterations reached)
+#   6    Ngắt mạch (Circuit breaker: quá nhiều vòng lặp không tạo ra progress)
+#   7    Context compaction hard-stop (Task quá lớn làm tràn bộ nhớ, cần chia nhỏ)
+#   8    Lỗi Provider / API / 5xx liên tục vượt ngưỡng retry
+#   130  Người dùng ngắt tiến trình (Ctrl+C / SIGINT / SIGTERM)
+#
+# -----------------------------------------------------------------------------
+# VÍ DỤ SỬ DỤNG THỰC TẾ (EXAMPLES):
+#   1. Chạy tuần tự mặc định toàn bộ queue:
+#      ./pipeline/scripts/harness.sh
+#
+#   2. Chạy phạm vi task từ TASK-001 đến TASK-005 với tối đa 15 vòng lặp:
+#      ./pipeline/scripts/harness.sh --tasks "1..5" --max-iter 15
+#
+#   3. Chạy Dual-Model: Executor (Claude Sonnet) kết hợp Reviewer phản biện (o3-mini):
+#      ./pipeline/scripts/harness.sh -m claude-sonnet-4-6 -r o3-mini --review-effort high
+#
+#   4. Chạy song song Wave với 4 worker độc lập qua Git Worktree:
+#      ./pipeline/scripts/harness.sh --parallel 4
+#
+#   5. Tự động tái hiện và sửa nhanh một lỗi cụ thể (Agentless Mode):
+#      ./pipeline/scripts/harness.sh --fix-bug "ZeroDivisionError in services/calc.py line 45"
+#      ./pipeline/scripts/harness.sh --fix-bug logs/traceback.log
+#
+#   6. Chế độ kiểm tra khô (Dry Run) với log chi tiết:
+#      ./pipeline/scripts/harness.sh --tasks "1..3" --dry-run --verbose
 # =============================================================================
 
 set -uo pipefail

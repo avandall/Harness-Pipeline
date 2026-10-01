@@ -3,9 +3,9 @@
 # setup.sh — Next-Gen Installer & Infrastructure Sync for Enterprise Pipeline
 # 
 # Usage:
-#   ./pipeline/script/setup.sh /path/to/target-proj              # Install or update infrastructure
-#   ./pipeline/script/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
-#   ./pipeline/script/setup.sh /path/to/target-proj --override-all # Force-overwrite everything including context
+#   ./pipeline/scripts/setup.sh /path/to/target-proj              # Install or update infrastructure
+#   ./pipeline/scripts/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
+#   ./pipeline/scripts/setup.sh /path/to/target-proj --override-all # Force-overwrite everything including context
 # =============================================================================
 
 set -euo pipefail

@@ -212,8 +212,12 @@ EOF
 ## Verification
 - Dual-model debate consensus reached (Turn ${turn}/${MAX_TURNS})
 "
-        git commit -m "$commit_msg" || true
-        log_ok "Context cleanly committed to git."
+        if git add -A -- "${CONTEXT_DIR}" && git commit -m "$commit_msg" -- "${CONTEXT_DIR}"; then
+          log_ok "Context cleanly committed to git."
+        else
+          log_error "Failed to commit context specifications."
+          exit 1
+        fi
       fi
     fi
 
