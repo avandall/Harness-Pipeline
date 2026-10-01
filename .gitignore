@@ -43,6 +43,9 @@ pipeline/docs/runtime/DEBATE_LOG.md
 pipeline/docs/runtime/PLAN_DEBATE.md
 pipeline/docs/runtime/PLAN_SEAL.sha256
 pipeline/docs/runtime/PLAN_SEAL_COMMIT
+pipeline/docs/runtime/CURRENT_TASK.md
+pipeline/docs/runtime/*.heartbeat
+.ralph_heartbeat
 pipeline/docs/runtime/runs/
 pipeline/docs/runtime/CURRENT
 pipeline/docs/runtime/PREV

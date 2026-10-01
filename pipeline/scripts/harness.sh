@@ -249,18 +249,19 @@ cleanup_on_interrupt() {
   # 2. Cleanup registered worktrees and branches
   if [[ -f "$reg_file" ]]; then
     while IFS='|' read -r wt br || [[ -n "$wt" ]]; do
-      [[ -n "$wt" ]] && git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+      [[ -n "$wt" ]] && (git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt")
       [[ -n "$br" ]] && git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done < "$reg_file"
     rm -f "$reg_file"
   elif ((${#ACTIVE_WORKTREES[@]} > 0)); then
     for wt in "${ACTIVE_WORKTREES[@]}"; do
-      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt"
     done
     for br in "${ACTIVE_BRANCHES[@]}"; do
       git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done
   fi
+  git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
   ACTIVE_WORKTREES=()
   ACTIVE_BRANCHES=()
   GLOBAL_WORKER_PIDS=()
@@ -314,6 +315,16 @@ safe_update_task_status() {
   # 2. Update task detail metadata block if present
   sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
 
+  # 3. Immediately commit task status change to master git tree if on master
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  local current_branch
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+  if [[ "$current_branch" == "master" || "$current_branch" == "main" ]]; then
+    git -C "$repo_root" add "$tasks_file" >/dev/null 2>&1 || true
+    git -C "$repo_root" commit -m "chore(task): update ${task_id} status to ${clean_status} [skip ci]" >/dev/null 2>&1 || true
+  fi
+
   flock -u "$lock_fd" 2>/dev/null || true
   exec {lock_fd}>&-
 }
@@ -338,6 +349,16 @@ safe_append_durable_log() {
   fi
 
   echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
+
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  local current_branch
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+  if [[ "$current_branch" == "master" || "$current_branch" == "main" ]]; then
+    git -C "$repo_root" add "$log_file" >/dev/null 2>&1 || true
+    git -C "$repo_root" commit -m "chore(log): update durable progress log [skip ci]" >/dev/null 2>&1 || true
+  fi
+
   flock -u "$lock_fd" 2>/dev/null || true
   exec {lock_fd}>&-
 }
@@ -1131,12 +1152,19 @@ _run_agent_turn() {
     return 7
   fi
 
+  local stalled
+  stalled=$(node -e 'const s=JSON.parse(process.argv[1]);process.stdout.write(s.stalled?"1":"0")' "$log_summary" 2>/dev/null || echo 0)
+  if [[ "$stalled" == "1" ]]; then
+    log_warn "⏰ [STALL WATCHDOG] Task timed out or stalled."
+    return 124
+  fi
+
   if [[ $exit_code -ne 0 ]]; then
     if [[ "$retryable" == "1" ]]; then
       log_warn "⚠️ [API ERROR] Transient API / network error detected."
       return 8
     fi
-    return 1
+    return "$exit_code"
   fi
   return 0
 }
@@ -1227,7 +1255,14 @@ execute_worker_for_task() {
   )
   local agent_exit=$?
 
-  if [[ $agent_exit -eq 124 || $agent_exit -eq 7 ]]; then
+  if [[ $agent_exit -eq 130 ]]; then
+    log_warn "⚠️ [Worker $task] Interrupted by user (Ctrl+C). Restoring task status to TODO."
+    safe_update_task_status "$task" "[ ] TODO"
+    return 130
+  fi
+
+  if [[ $agent_exit -ne 0 ]]; then
+    log_error "🚨 [Worker $task] Agent execution failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
     return 1
@@ -1240,6 +1275,13 @@ execute_worker_for_task() {
     safe_update_task_status "$task" "[!] BLOCKED"
     return 1
   fi
+
+  # Ensure worker branch commits ONLY code and test changes, NEVER metadata or runtime files
+  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/context/Tasks_list.md 2>/dev/null || true
+  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/runtime/PROGRESS_LOG.md 2>/dev/null || true
+  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/runtime/CURRENT_TASK.md 2>/dev/null || true
+  rm -f "$worktree_dir"/pipeline/docs/runtime/VERIFICATION_REPORT.md 2>/dev/null || true
+  rm -f "$worktree_dir"/.ralph_heartbeat 2>/dev/null || true
 
   git -C "$worktree_dir" add -A
   local commit_msg
@@ -1287,16 +1329,24 @@ execute_worker_for_task() {
     fi
 
     # 5. Integrate to base branch
-    if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
-      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into ${base_branch}!"
-      git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
-      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
+    # Ensure any pending uncommitted status or log changes on base_branch are committed first
+    if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
+      git -C "$repo_root" add pipeline/docs/context/Tasks_list.md pipeline/docs/runtime/PROGRESS_LOG.md 2>/dev/null || true
+      git -C "$repo_root" commit -m "chore(pre-merge): save pending status and logs before integrating $task [skip ci]" >/dev/null 2>&1 || true
+    fi
+
+    local merge_output
+    if ! merge_output=$(git -C "$repo_root" merge --squash "$branch_name" 2>&1); then
+      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into ${base_branch}! Error: ${merge_output}"
+      git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
+      git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
       safe_update_task_status "$task" "[!] BLOCKED"
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 6. Hard Gate Tier 2 on base branch (Reset hard if fail!)
+    # 6. Hard Gate Tier 2 on base branch (Reset cleanly if fail, NEVER git clean -fd!)
     if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
       local main_commit_msg
       main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
@@ -1306,8 +1356,9 @@ execute_worker_for_task() {
       if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
         if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
           log_error "[MERGE-QUEUE] git commit failed on ${base_branch} for $task despite staged changes!"
-          git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
-          git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
+          git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+          git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
+          git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
           safe_update_task_status "$task" "[!] BLOCKED"
           flock -u "$merge_fd" 2>/dev/null || true
           exit 1
@@ -1319,11 +1370,12 @@ execute_worker_for_task() {
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} (Tier 2 PASS)."
       log_ok "🎉 [INTEGRATED] Task $task merged and verified on ${base_branch} ✓"
     else
-      git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
-      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
+      git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
+      git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
       safe_update_task_status "$task" "[!] BLOCKED"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on ${base_branch}. Reverted via reset --hard."
-      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on ${base_branch}. Reverted cleanly via reset --hard."
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on ${base_branch}. Reverted cleanly."
+      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on ${base_branch}. Reverted cleanly."
     fi
     flock -u "$merge_fd" 2>/dev/null || true
   } {merge_fd}>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
@@ -1337,123 +1389,166 @@ run_parallel_waves() {
   base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
   [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
-  log_section "PARALLEL WAVE DISPATCHER (Max Workers: ${max_workers})"
-
-  # 1. Run task_dispatcher.py to generate wave schedule
-  local schedule_json
-  schedule_json=$(python3 "${PIPELINE_DIR}/scripts/task_dispatcher.py" "${CONTEXT_DIR}/Tasks_list.md" --max-workers "$max_workers" 2>/dev/null || echo "[]")
-
-  local wave_count
-  wave_count=$(echo "$schedule_json" | python3 -c 'import sys, json; data=json.load(sys.stdin); print(len(data))' 2>/dev/null || echo "0")
-
-  if [[ "$wave_count" -eq 0 ]]; then
-    log_ok "No pending tasks to dispatch in parallel. All tasks are completed or blocked."
-    return 0
-  fi
-
-  log_info "Task Dispatcher identified ${wave_count} wave(s) of disjoint tasks."
+  log_section "DYNAMIC PARALLEL WORKER POOL (Max Concurrent: ${max_workers})"
 
   local reg_file="${PIPELINE_DIR}/.ralph/active_worktrees.txt"
   mkdir -p "$(dirname "$reg_file")"
 
-  local wave_idx=0
-  while (( wave_idx < wave_count )); do
-    local wave_num=$(( wave_idx + 1 ))
-    local tasks_in_wave
-    tasks_in_wave=$(echo "$schedule_json" | python3 -c "import sys, json; data=json.load(sys.stdin); print(' '.join(t['task_id'] for t in data[$wave_idx]['tasks']))" 2>/dev/null || echo "")
+  declare -A POOL_PID_TO_TASK=()
+  declare -A POOL_PID_TO_WT=()
+  declare -A POOL_PID_TO_BR=()
+  declare -A POOL_PID_START=()
 
-    log_section "DISPATCHING WAVE ${wave_num}/${wave_count}: [${tasks_in_wave}]"
+  local pool_failed_tasks=0
+  local pool_done_tasks=0
+  local last_heartbeat=0
 
-    local wave_pre_commit
-    wave_pre_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo "")"
-    local pids=()
-    local wave_worktrees=()
-    local wave_branches=()
+  while true; do
+    # 1. Gather running task IDs
+    local running_tasks=""
+    for p in "${!POOL_PID_TO_TASK[@]}"; do
+      running_tasks+="${POOL_PID_TO_TASK[$p]},"
+    done
+    running_tasks="${running_tasks%,}"
 
-    for task in $tasks_in_wave; do
+    # 2. Fill available slots up to max_workers
+    local active_count="${#POOL_PID_TO_TASK[@]}"
+    while (( active_count < max_workers )); do
+      local next_task
+      next_task=$(python3 "${PIPELINE_DIR}/scripts/task_dispatcher.py" "${CONTEXT_DIR}/Tasks_list.md" \
+        --next-available --running "$running_tasks" --max-workers "$max_workers" 2>/dev/null || echo "")
+
+      if [[ -z "$next_task" ]]; then
+        break
+      fi
+
+      local task="$next_task"
       local worktree_dir="${PIPELINE_DIR}/.ralph/worktrees/${RUN_ID}/${task}"
       local branch_name="ralph/${RUN_ID}/${task}"
 
-      # Write-Ahead Log: Pre-register worktree & branch so cleanup trap never misses them if Ctrl+C occurs during git worktree add
+      # Clean up any stale worktree or branch with the same name before attempting add
+      if git -C "$repo_root" worktree list | grep -q "$worktree_dir"; then
+        git -C "$repo_root" worktree remove --force "$worktree_dir" >/dev/null 2>&1 || rm -rf "$worktree_dir"
+      fi
+      git -C "$repo_root" branch -D "$branch_name" >/dev/null 2>&1 || true
+      git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
+
       echo "${worktree_dir}|${branch_name}" >> "$reg_file"
       ACTIVE_WORKTREES+=("$worktree_dir")
       ACTIVE_BRANCHES+=("$branch_name")
-      wave_worktrees+=("$worktree_dir")
-      wave_branches+=("$branch_name")
 
       mkdir -p "$(dirname "$worktree_dir")"
-      if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" "$base_branch" >/dev/null 2>&1; then
-        log_error "Failed to create git worktree for $task. Skipping."
-        local reg_tmp="${reg_file}.tmp"
-        awk -v target="$worktree_dir" -F'|' '$1 != target' "$reg_file" > "$reg_tmp" 2>/dev/null && mv "$reg_tmp" "$reg_file" 2>/dev/null || true
-        git -C "$repo_root" branch -D "$branch_name" >/dev/null 2>&1 || true
+      local wt_err
+      if ! wt_err=$(git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" "$base_branch" 2>&1); then
+        log_error "Failed to create git worktree for $task: ${wt_err}. Marking task blocked."
+        safe_update_task_status "$task" "[!] BLOCKED"
         continue
       fi
 
       (
         execute_worker_for_task "$worktree_dir" "$task" "$branch_name" "$repo_root"
       ) &
-      pids+=($!)
-      GLOBAL_WORKER_PIDS+=($!)
-      log_info "Launched Worker for ${task} (PID: ${pids[-1]}, Worktree: ${worktree_dir})"
+      local wpid=$!
+      POOL_PID_TO_TASK["$wpid"]="$task"
+      POOL_PID_TO_WT["$wpid"]="$worktree_dir"
+      POOL_PID_TO_BR["$wpid"]="$branch_name"
+      POOL_PID_START["$wpid"]=$(date +%s)
+      GLOBAL_WORKER_PIDS+=("$wpid")
+
+      running_tasks+="${task},"
+      active_count=$(( active_count + 1 ))
+
+      log_ok "🚀 [POOL SLOT ${active_count}/${max_workers}] Launched Worker for [${task}] (PID: ${wpid})"
     done
 
-    # Collect individual worker exit codes (Issue #4)
-    local wave_failed=0
-    for pid in "${pids[@]}"; do
-      if ! wait "$pid"; then
-        wave_failed=$(( wave_failed + 1 ))
+    # 3. If no active workers remain and no more tasks can be scheduled, break!
+    if (( ${#POOL_PID_TO_TASK[@]} == 0 )); then
+      log_ok "🎉 [POOL] All available tasks have been processed!"
+      break
+    fi
+
+    # 4. Live Terminal Heartbeat (every 10s)
+    local now
+    now=$(date +%s)
+    if (( now - last_heartbeat >= 10 )); then
+      last_heartbeat=$now
+      log_info "⚡ [POOL HEARTBEAT] ${#POOL_PID_TO_TASK[@]}/${max_workers} Workers Active:"
+      for p in "${!POOL_PID_TO_TASK[@]}"; do
+        local t="${POOL_PID_TO_TASK[$p]}"
+        local st="${POOL_PID_START[$p]}"
+        local elapsed=$(( now - st ))
+        local hb_file="${RUN_DIR}/iter-1-WORKER-${t}.log.heartbeat"
+        local status_str="Running"
+        if [[ -f "$hb_file" ]]; then
+          status_str=$(cat "$hb_file" 2>/dev/null | tr -d '\r\n' || echo "Running")
+        fi
+        local child_cnt=$(pgrep -P "$p" 2>/dev/null | wc -l || echo 0)
+        echo -e "   ${CYAN}• [${t}]${NC} PID: ${p} | Elapsed: ${elapsed}s | Subprocesses: ${child_cnt} | ${status_str}"
+      done
+    fi
+
+    # 5. Wait for ANY single worker to finish (using wait -n)
+    local finished_pid=0
+    if wait -n -p finished_pid; then
+      local worker_exit=0
+    else
+      local worker_exit=$?
+    fi
+
+    # Fallback if finished_pid not captured by -p
+    if [[ -z "$finished_pid" || "$finished_pid" -eq 0 ]]; then
+      for p in "${!POOL_PID_TO_TASK[@]}"; do
+        if ! kill -0 "$p" 2>/dev/null; then
+          finished_pid="$p"
+          break
+        fi
+      done
+    fi
+
+    if [[ -n "$finished_pid" && -n "${POOL_PID_TO_TASK[$finished_pid]:-}" ]]; then
+      local f_task="${POOL_PID_TO_TASK[$finished_pid]}"
+      local f_wt="${POOL_PID_TO_WT[$finished_pid]}"
+      local f_br="${POOL_PID_TO_BR[$finished_pid]}"
+
+      if [[ $worker_exit -ne 0 ]]; then
+        log_warn "⚠️ [POOL] Worker for [${f_task}] finished with exit code ${worker_exit} (Failed/Blocked)."
+        pool_failed_tasks=$(( pool_failed_tasks + 1 ))
+      else
+        log_ok "✅ [POOL] Worker for [${f_task}] completed successfully! Slot freed."
+        pool_done_tasks=$(( pool_done_tasks + 1 ))
       fi
-    done
-    if [[ $wave_failed -gt 0 ]]; then
-      log_warn "⚠️ [WAVE ${wave_num}] ${wave_failed} worker(s) exited with failure or blocked status."
+
+      # Cleanup worktree & branch
+      git -C "$repo_root" worktree remove --force "$f_wt" >/dev/null 2>&1 || rm -rf "$f_wt"
+      git -C "$repo_root" branch -D "$f_br" >/dev/null 2>&1 || true
+      git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
+
+      local reg_tmp="${reg_file}.tmp"
+      awk -v target="$f_wt" -F'|' '$1 != target' "$reg_file" > "$reg_tmp" 2>/dev/null && mv "$reg_tmp" "$reg_file" 2>/dev/null || true
+
+      unset "POOL_PID_TO_TASK[$finished_pid]"
+      unset "POOL_PID_TO_WT[$finished_pid]"
+      unset "POOL_PID_TO_BR[$finished_pid]"
+      unset "POOL_PID_START[$finished_pid]"
     fi
 
-    # Post-Wave Integration Gate
-    log_section "POST-WAVE ${wave_num} INTEGRATION GATE"
-    if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
-      log_error "🚨 [WAVE REGRESSION] Cross-task interaction broke full test suite! Rolling back Wave ${wave_num}..."
-      # Kill any lingering background workers before rollback (Issue #11)
-      for pid in "${pids[@]}"; do
-        kill -TERM "$pid" 2>/dev/null || true
-      done
-      wait 2>/dev/null || true
-      git -C "$repo_root" reset --hard "$wave_pre_commit"
-      git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
-      for t in $tasks_in_wave; do
-        safe_update_task_status "$t" "[!] BLOCKED"
-      done
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Wave ${wave_num} regression detected! Reverted to ${wave_pre_commit}. Tasks in wave marked [!] BLOCKED."
-      for wt in "${wave_worktrees[@]}"; do
-        git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
-      done
-      for br in "${wave_branches[@]}"; do
-        git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
-      done
-      rm -f "$reg_file"
-      ACTIVE_WORKTREES=()
-      ACTIVE_BRANCHES=()
-      GLOBAL_WORKER_PIDS=()
-      return 1
-    fi
-    log_ok "Wave ${wave_num} integration verified 100% PASS ✓"
-
-    # Cleanup worktrees and branches for this wave
-    for wt in "${wave_worktrees[@]}"; do
-      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
-    done
-    for br in "${wave_branches[@]}"; do
-      git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
-    done
-    rm -f "$reg_file"
-    ACTIVE_WORKTREES=()
-    ACTIVE_BRANCHES=()
-    GLOBAL_WORKER_PIDS=()
-
-    wave_idx=$(( wave_idx + 1 ))
+    sleep 1
   done
 
-  log_ok "All parallel waves completed successfully!"
+  # Final integration gate
+  log_section "FINAL REPOSITORY INTEGRATION GATE"
+  if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+    log_error "🚨 [INTEGRATION REGRESSION] Tier 2 full verification failed across integrated tasks!"
+    return 1
+  fi
+  log_ok "Final repository integration verified PASS 100% ✓"
+
+  rm -f "$reg_file" 2>/dev/null || true
+  ACTIVE_WORKTREES=()
+  ACTIVE_BRANCHES=()
+  GLOBAL_WORKER_PIDS=()
+
+  log_ok "Dynamic Parallel Worker Pool finished: ${pool_done_tasks} task(s) done, ${pool_failed_tasks} task(s) failed/blocked."
   return 0
 }
 
