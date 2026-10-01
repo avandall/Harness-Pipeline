@@ -77,9 +77,9 @@ parse_args() {
 preflight_check() {
   mkdir -p "$RUNTIME_DIR" "${PIPELINE_DIR}/.ralph/runs"
 
-  for f in "${CONTEXT_DIR}/PROJECT_BRIEF.md" "${CONTEXT_DIR}/Tasks_list.md" "${CONTEXT_DIR}/BOUNDARIES.md" "${CONTEXT_DIR}/TECH_CONTEXT.md"; do
+  for f in "${CONTEXT_DIR}/PROJECT_BRIEF.md" "${CONTEXT_DIR}/Tasks_list.md" "${CONTEXT_DIR}/BOUNDARIES.md" "${CONTEXT_DIR}/TECH_CONTEXT.md" "${CONTEXT_DIR}/Original_Tasks.md"; do
     if [[ ! -f "$f" ]]; then
-      log_error "Missing context file: $f. Please initialize context first."
+      log_error "Missing context file: $f. Please initialize context and define Original_Tasks.md first."
       exit 1
     fi
   done
@@ -143,6 +143,8 @@ main() {
   log_info "Max Turns: ${MAX_TURNS} | Per-Turn Timeout: ${TIMEOUT}"
   log_info "Critic Model:  ${CRITIC_MODEL:-default provider model}"
   log_info "Planner Model: ${PLANNER_MODEL:-default provider model}"
+  local original_tasks_path="${CONTEXT_DIR}/Original_Tasks.md"
+  log_info "Human Intent Anchor: ${original_tasks_path}"
   log_info "Debate History: ${DEBATE_LOG}"
 
   # Initialize DEBATE_LOG header if not present
@@ -152,6 +154,7 @@ main() {
 > **Session Started:** $(date '+%Y-%m-%d %H:%M:%S') | **Run ID:** ${RUN_ID}
 
 This log records the multi-turn adversarial debate and refinement between Lead Architect (Critic) and System Architect (Planner) to formalize context and specifications.
+All revisions must strictly align with human intent defined in Original_Tasks.md.
 
 ---
 EOF
@@ -171,6 +174,7 @@ EOF
     critic_prompt="${critic_prompt//\{\{TURN\}\}/${turn}}"
     critic_prompt="${critic_prompt//\{\{MAX_TURNS\}\}/${MAX_TURNS}}"
     critic_prompt="${critic_prompt//\{\{DEBATE_LOG_PATH\}\}/${DEBATE_LOG}}"
+    critic_prompt="${critic_prompt//\{\{ORIGINAL_TASKS_PATH\}\}/${original_tasks_path}}"
 
     run_turn "$critic_prompt" "$CRITIC_MODEL" "CRITIC" "$turn" || true
 
@@ -191,6 +195,7 @@ EOF
     planner_prompt="${planner_prompt//\{\{TURN\}\}/${turn}}"
     planner_prompt="${planner_prompt//\{\{MAX_TURNS\}\}/${MAX_TURNS}}"
     planner_prompt="${planner_prompt//\{\{DEBATE_LOG_PATH\}\}/${DEBATE_LOG}}"
+    planner_prompt="${planner_prompt//\{\{ORIGINAL_TASKS_PATH\}\}/${original_tasks_path}}"
 
     run_turn "$planner_prompt" "$PLANNER_MODEL" "PLANNER" "$turn" || true
     log_ok "Planner completed filesystem updates for Turn ${turn}."

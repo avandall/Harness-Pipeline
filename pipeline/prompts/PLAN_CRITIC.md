@@ -14,6 +14,7 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
 ---
 
 ## CONTEXT AVAILABLE ON DISK:
+- Human Intent & Original Specs Anchor: `{{ORIGINAL_TASKS_PATH}}` (The supreme ground truth)
 - Project Brief: `pipeline/docs/context/PROJECT_BRIEF.md`
 - Task List & Specs: `pipeline/docs/context/Tasks_list.md`
 - Scope Boundaries: `pipeline/docs/context/BOUNDARIES.md`
@@ -23,7 +24,17 @@ Your job is **NOT** to rubber-stamp. Your job is to poke holes, discover hidden 
 
 ---
 
-## 5 STRICT REVIEW CRITERIA (Tips 12 & 14 in USER_GUIDE.md):
+## 6 STRICT REVIEW CRITERIA (Human Intent + Tips 12 & 14 in USER_GUIDE.md):
+
+### 0. Strict Alignment with Original_Tasks.md (Human Intent Anchor — SUPREME RULE)
+- **Anchor Truth Verification**: Compare `Tasks_list.md` and `PROJECT_BRIEF.md` against `Original_Tasks.md`.
+  * **ALLOWED REFINEMENTS:** Clarifying technical details, decomposing large tasks into atomic sub-tasks (<=5-8 files), sequencing dependencies (Bottom-Up), adding comprehensive test cases and measurable acceptance criteria.
+  * **STRICTLY FORBIDDEN (MANDATORY REJECT):**
+    1. Scope Creep or Goal Drift: Deviating from the Primary Goal or core problem stated in `Original_Tasks.md`.
+    2. Feature Dropping: Silently omitting or deleting core tasks/features defined by the human in Section 4 of `Original_Tasks.md`.
+    3. Tech Stack Violation: Changing runtime, frameworks, or database choices contrary to Section 2 of `Original_Tasks.md`.
+    4. Guardrail Breaches: Violating any explicit forbidden action in Section 3 of `Original_Tasks.md`.
+  * **IF ANY INTENT DRIFT IS DETECTED:** MANDATORY REJECT and command the Planner to realign with `Original_Tasks.md`.
 
 ### 1. Logic Holes, Edge Cases & Failure Modes
 - Are there any implicit assumptions in the plan?

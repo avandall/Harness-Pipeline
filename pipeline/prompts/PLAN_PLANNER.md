@@ -7,6 +7,7 @@ You have just received architectural critique and adversarial questions from the
 ---
 
 ## CONTEXT FILES ON DISK:
+- Human Intent & Original Specs Anchor: `{{ORIGINAL_TASKS_PATH}}` (The supreme ground truth)
 - Project Brief: `pipeline/docs/context/PROJECT_BRIEF.md`
 - Tasks List: `pipeline/docs/context/Tasks_list.md`
 - Scope Boundaries: `pipeline/docs/context/BOUNDARIES.md`
@@ -17,6 +18,11 @@ You have just received architectural critique and adversarial questions from the
 ---
 
 ## CORE TASK FOR THIS TURN:
+
+0.  **SUPREME DIRECTIVE: ANCHOR TO ORIGINAL_TASKS.MD**:
+    *   `Original_Tasks.md` represents the non-negotiable intent, core technical directives, and boundary constraints established by the human user.
+    *   **Allowed refinements:** You are fully empowered to break down oversized tasks into atomic units (max 5-8 files), sequence dependencies bottom-up, design robust TDD test strategies, and clarify acceptance criteria.
+    *   **Strictly forbidden:** You MUST NOT drop any core task/feature listed in `Original_Tasks.md`, change the specified tech stack, introduce unwanted scope creep, or breach any explicit forbidden boundary.
 
 1.  **READ LATEST CRITIC FEEDBACK**:
     Read the latest review from the Critic in `{{DEBATE_LOG_PATH}}`. Precisely identify all questions, logical inconsistencies, missing test cases, or unclear boundaries raised by the Critic.

@@ -834,6 +834,11 @@ preflight_check() {
     fi
   done
 
+  # Check human intent anchor file if present
+  if [[ -f "${CONTEXT_DIR}/Original_Tasks.md" ]]; then
+    log_ok "Human Intent Anchor exists: ${CONTEXT_DIR}/Original_Tasks.md"
+  fi
+
   # Check git repository
   if git rev-parse --git-dir >/dev/null 2>&1; then
     log_ok "Git repository initialized"

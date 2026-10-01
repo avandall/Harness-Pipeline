@@ -21,7 +21,7 @@ compute_seal() {
   local count=0
   local hashes=()
 
-  for f_name in "PROJECT_BRIEF.md" "Tasks_list.md" "BOUNDARIES.md" "TECH_CONTEXT.md"; do
+  for f_name in "PROJECT_BRIEF.md" "Tasks_list.md" "BOUNDARIES.md" "TECH_CONTEXT.md" "Original_Tasks.md"; do
     local f_path="$target_dir/$f_name"
     if [[ -f "$f_path" ]]; then
       ((count++))
@@ -49,7 +49,7 @@ compute_seal_from_git() {
   local count=0
   local hashes=()
 
-  for f_name in "PROJECT_BRIEF.md" "Tasks_list.md" "BOUNDARIES.md" "TECH_CONTEXT.md"; do
+  for f_name in "PROJECT_BRIEF.md" "Tasks_list.md" "BOUNDARIES.md" "TECH_CONTEXT.md" "Original_Tasks.md"; do
     if git cat-file -e "${commit}:${rel_context}/${f_name}" 2>/dev/null; then
       ((count++))
       local file_hash
