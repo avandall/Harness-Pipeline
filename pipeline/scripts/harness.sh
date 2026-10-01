@@ -298,17 +298,24 @@ safe_update_task_status() {
   escaped_tid="$(printf '%s' "$task_id" | sed 's/[][\\.^$*+?{}()|/]/\\&/g')"
 
   local lock_fd
-  {
-    if [[ -z "${lock_fd:-}" ]]; then
-      log_error "Failed to allocate file descriptor for lock on $lock_file"
-      return 1
-    fi
-    flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) updating status for task $task_id"; return 1; }
-    # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
-    sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
-    # 2. Update task detail metadata block if present
-    sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
-  } {lock_fd}>"$lock_file"
+  exec {lock_fd}>"$lock_file" || {
+    log_error "Failed to allocate file descriptor for lock on $lock_file"
+    return 1
+  }
+
+  if ! flock -x -w 30 "$lock_fd"; then
+    log_error "Lock timeout (30s) updating status for task $task_id"
+    exec {lock_fd}>&-
+    return 1
+  fi
+
+  # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
+  sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
+  # 2. Update task detail metadata block if present
+  sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
+
+  flock -u "$lock_fd" 2>/dev/null || true
+  exec {lock_fd}>&-
 }
 
 safe_append_durable_log() {
@@ -319,14 +326,20 @@ safe_append_durable_log() {
   mkdir -p "$(dirname "$lock_file")"
 
   local lock_fd
-  {
-    if [[ -z "${lock_fd:-}" ]]; then
-      log_error "Failed to allocate file descriptor for lock on $lock_file"
-      return 1
-    fi
-    flock -x -w 30 "$lock_fd" || { log_error "Lock timeout (30s) appending to durable log $log_file"; return 1; }
-    echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
-  } {lock_fd}>"$lock_file"
+  exec {lock_fd}>"$lock_file" || {
+    log_error "Failed to allocate file descriptor for lock on $lock_file"
+    return 1
+  }
+
+  if ! flock -x -w 30 "$lock_fd"; then
+    log_error "Lock timeout (30s) appending to durable log $log_file"
+    exec {lock_fd}>&-
+    return 1
+  fi
+
+  echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
+  flock -u "$lock_fd" 2>/dev/null || true
+  exec {lock_fd}>&-
 }
 
 wait_and_acquire_merge_lock() {
@@ -1248,35 +1261,42 @@ execute_worker_for_task() {
       exit 1
     }
 
-    log_info "[MERGE-QUEUE] Worker $task entering serialized integration into main..."
+    local base_branch
+    base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+    [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
-    # Assert repo_root is on branch main before doing any merge
+    log_info "[MERGE-QUEUE] Worker $task entering serialized integration into ${base_branch}..."
+
+    # Assert repo_root is on base branch before doing any merge
     local current_branch
-    current_branch=$(git -C "$repo_root" symbolic-ref --short HEAD 2>/dev/null || echo "")
-    if [[ "$current_branch" != "main" ]]; then
-      log_error "[MERGE-QUEUE] Fatal: repo_root is on branch '$current_branch', expected 'main'! Aborting integration for $task."
+    current_branch=$(git -C "$repo_root" symbolic-ref --short HEAD 2>/dev/null || git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [[ "$current_branch" != "$base_branch" ]]; then
+      log_error "[MERGE-QUEUE] Fatal: repo_root is on branch '$current_branch', expected '$base_branch'! Aborting integration for $task."
       safe_update_task_status "$task" "[!] BLOCKED"
+      flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 4. State: REBASING on main
-    if ! git -C "$worktree_dir" rebase main >/dev/null 2>&1; then
+    # 4. State: REBASING on base branch
+    if ! git -C "$worktree_dir" rebase "$base_branch" >/dev/null 2>&1; then
       log_warn "[MERGE-QUEUE] Worker $task rebase conflict. Aborting rebase and marking task BLOCKED."
       git -C "$worktree_dir" rebase --abort 2>/dev/null || true
       safe_update_task_status "$task" "[!] BLOCKED"
+      flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 5. Integrate to main
+    # 5. Integrate to base branch
     if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
-      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into main!"
+      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into ${base_branch}!"
       git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
       git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
       safe_update_task_status "$task" "[!] BLOCKED"
+      flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 6. Hard Gate Tier 2 on main (Reset hard if fail!)
+    # 6. Hard Gate Tier 2 on base branch (Reset hard if fail!)
     if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
       local main_commit_msg
       main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
@@ -1285,25 +1305,27 @@ execute_worker_for_task() {
       fi
       if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
         if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-          log_error "[MERGE-QUEUE] git commit failed on main for $task despite staged changes!"
+          log_error "[MERGE-QUEUE] git commit failed on ${base_branch} for $task despite staged changes!"
           git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
           git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
           safe_update_task_status "$task" "[!] BLOCKED"
+          flock -u "$merge_fd" 2>/dev/null || true
           exit 1
         else
-          log_warn "[MERGE-QUEUE] No new changes to commit on main for $task (already integrated or no-op)."
+          log_warn "[MERGE-QUEUE] No new changes to commit on ${base_branch} for $task (already integrated or no-op)."
         fi
       fi
       safe_update_task_status "$task" "[x] DONE"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into main (Tier 2 PASS)."
-      log_ok "🎉 [INTEGRATED] Task $task merged and verified on main ✓"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} (Tier 2 PASS)."
+      log_ok "🎉 [INTEGRATED] Task $task merged and verified on ${base_branch} ✓"
     else
       git -C "$repo_root" reset --hard HEAD >/dev/null 2>&1
       git -C "$repo_root" clean -fd >/dev/null 2>&1 || true
       safe_update_task_status "$task" "[!] BLOCKED"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on main. Reverted via reset --hard."
-      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on main. Reverted cleanly via reset --hard."
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on ${base_branch}. Reverted via reset --hard."
+      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on ${base_branch}. Reverted cleanly via reset --hard."
     fi
+    flock -u "$merge_fd" 2>/dev/null || true
   } {merge_fd}>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
 }
 
@@ -1311,6 +1333,9 @@ run_parallel_waves() {
   local max_workers="${PARALLEL_WORKERS:-3}"
   local repo_root
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  local base_branch
+  base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+  [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
   log_section "PARALLEL WAVE DISPATCHER (Max Workers: ${max_workers})"
 
@@ -1357,7 +1382,7 @@ run_parallel_waves() {
       wave_branches+=("$branch_name")
 
       mkdir -p "$(dirname "$worktree_dir")"
-      if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" main >/dev/null 2>&1; then
+      if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" "$base_branch" >/dev/null 2>&1; then
         log_error "Failed to create git worktree for $task. Skipping."
         local reg_tmp="${reg_file}.tmp"
         awk -v target="$worktree_dir" -F'|' '$1 != target' "$reg_file" > "$reg_tmp" 2>/dev/null && mv "$reg_tmp" "$reg_file" 2>/dev/null || true
