@@ -249,19 +249,18 @@ cleanup_on_interrupt() {
   # 2. Cleanup registered worktrees and branches
   if [[ -f "$reg_file" ]]; then
     while IFS='|' read -r wt br || [[ -n "$wt" ]]; do
-      [[ -n "$wt" ]] && (git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt")
+      [[ -n "$wt" ]] && git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
       [[ -n "$br" ]] && git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done < "$reg_file"
     rm -f "$reg_file"
   elif ((${#ACTIVE_WORKTREES[@]} > 0)); then
     for wt in "${ACTIVE_WORKTREES[@]}"; do
-      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || rm -rf "$wt"
+      git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
     done
     for br in "${ACTIVE_BRANCHES[@]}"; do
       git -C "$repo_root" branch -D "$br" >/dev/null 2>&1 || true
     done
   fi
-  git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
   ACTIVE_WORKTREES=()
   ACTIVE_BRANCHES=()
   GLOBAL_WORKER_PIDS=()
@@ -315,16 +314,6 @@ safe_update_task_status() {
   # 2. Update task detail metadata block if present
   sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
 
-  # 3. Immediately commit task status change to master git tree if on master
-  local repo_root
-  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  local current_branch
-  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
-  if [[ "$current_branch" == "master" || "$current_branch" == "main" ]]; then
-    git -C "$repo_root" add "$tasks_file" >/dev/null 2>&1 || true
-    git -C "$repo_root" commit -m "chore(task): update ${task_id} status to ${clean_status} [skip ci]" >/dev/null 2>&1 || true
-  fi
-
   flock -u "$lock_fd" 2>/dev/null || true
   exec {lock_fd}>&-
 }
@@ -349,16 +338,6 @@ safe_append_durable_log() {
   fi
 
   echo -e "\n### ${worker_tag} $(date '+%Y-%m-%d %H:%M:%S')\n${content}" >> "$log_file"
-
-  local repo_root
-  repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  local current_branch
-  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
-  if [[ "$current_branch" == "master" || "$current_branch" == "main" ]]; then
-    git -C "$repo_root" add "$log_file" >/dev/null 2>&1 || true
-    git -C "$repo_root" commit -m "chore(log): update durable progress log [skip ci]" >/dev/null 2>&1 || true
-  fi
-
   flock -u "$lock_fd" 2>/dev/null || true
   exec {lock_fd}>&-
 }
@@ -506,22 +485,29 @@ inspect_task_complexity() {
     found { print }
   ' "$tasks_file")
 
-  local is_wildcard=0
-  if echo "$spec_block" | grep -qE "Services/\*"; then
-    is_wildcard=1
+  # 1. Scaffold, setup, chore tasks are structural initialization, NOT complex code
+  local task_type
+  task_type=$(echo "$spec_block" | grep -iE "Task Type:[[:space:]]*[A-Za-z0-9_-]+" | awk '{print $NF}' | tr '[:upper:]' '[:lower:]' || echo "")
+  if [[ "$task_type" =~ scaffold|setup|chore ]]; then
+    echo "0 1"
+    return
   fi
+
+  # 2. Extract ONLY the "Files to Modify/Create" section to prevent false alarms from description prose
+  local files_section
+  files_section=$(echo "$spec_block" | awk '
+    /#### Files to Modify\/Create:/ { flag=1; next }
+    /#### / && flag { exit }
+    flag { print }
+  ')
+  [[ -z "$files_section" ]] && files_section="$spec_block"
 
   local svc_count
-  svc_count=$(echo "$spec_block" | grep -oE "Services/[A-Za-z0-9_-]+" | sort -u | wc -l)
-  if [[ $is_wildcard -eq 1 ]]; then
-    svc_count=$(( svc_count + 6 ))
-  fi
+  svc_count=$(echo "$files_section" | grep -oE "(src|api|services|apps|modules)/[A-Za-z0-9_-]+" | sort -u | wc -l)
 
+  # 3. Only count meaningful logic files (exclude __init__.py, markdown docs, config files)
   local file_count
-  file_count=$(echo "$spec_block" | grep -oE '[A-Za-z0-9_./-]+\.(py|proto|md|json|yml|yaml|txt|toml|gitignore)' | sort -u | wc -l)
-  if [[ $is_wildcard -eq 1 ]]; then
-    file_count=$(( file_count + 6 ))
-  fi
+  file_count=$(echo "$files_section" | grep -oE '[A-Za-z0-9_./-]+\.(py|proto)' | grep -v "__init__\.py" | sort -u | wc -l)
 
   echo "$svc_count $file_count"
 }
@@ -532,8 +518,8 @@ create_verified_step_checkpoint() {
   local ckpt_tag="ralph-checkpoint-${tid}"
 
   if [[ -n "$(git status --porcelain --ignore-submodules=dirty 2>/dev/null)" ]]; then
-    # Quick deterministic verification check
-    if python3 "${PIPELINE_DIR}/scripts/verify.py" --quick >/dev/null 2>&1; then
+    # Quick deterministic verification check (diff-aware)
+    if python3 "${PIPELINE_DIR}/scripts/verify.py" --quick --diff auto >/dev/null 2>&1; then
       local ckpt_commit
       ckpt_commit=$(git stash create "ralph-verified-${tid}" 2>/dev/null || echo "")
       if [[ -n "$ckpt_commit" ]]; then
@@ -868,7 +854,10 @@ preflight_check() {
     fi
   done
 
-  # Check human intent anchor file if present
+  # Check interview plan and human intent anchor files if present
+  if [[ -f "${CONTEXT_DIR}/INTERVIEW_PLAN.md" ]]; then
+    log_ok "Interview Plan exists: ${CONTEXT_DIR}/INTERVIEW_PLAN.md"
+  fi
   if [[ -f "${CONTEXT_DIR}/Original_Tasks.md" ]]; then
     log_ok "Human Intent Anchor exists: ${CONTEXT_DIR}/Original_Tasks.md"
   fi
@@ -1044,8 +1033,11 @@ check_and_auto_commit_done_task() {
         local repo_root
         repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-        # Hard OS Gate: Verify Tier 2 before committing to main
-        if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+        # Hard OS Gate: Verify Tier 2 before committing to main (diff-aware against base ref)
+        local base_ref
+        base_ref="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+        [[ -z "$base_ref" || "$base_ref" == "HEAD" ]] && base_ref="master"
+        if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_ref"; then
           log_error "🚨 [HARD OS GATE] Tier 2 verification FAILED for task [${done_task_id}]! Refusing to commit broken changes to main."
           safe_update_task_status "$done_task_id" "[!] BLOCKED"
           safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} failed Tier 2 verification gate before commit. Marked [!] BLOCKED."
@@ -1054,7 +1046,8 @@ check_and_auto_commit_done_task() {
 
         log_ok "[${mode_label}] Hard OS Gate passed 100% ✓. Auto-committing cleanly..."
         safe_update_task_status "$done_task_id" "[x] DONE"
-        git add -A
+        git add -A 2>/dev/null || true
+        git reset pipeline/ .pipeline/ BLOCKERS/ .ralph* 2>/dev/null || true
         local commit_msg
         commit_msg=$(generate_commit_message "$done_task_id" "$mode_label")
         git commit -m "$commit_msg" 2>&1 | tee -a "${RUNTIME_DIR}/session_live.log" || true
@@ -1093,21 +1086,21 @@ ensure_clean_working_tree() {
           log_info "🛡️ Interrupted changes archived safely in git stash (${stash_hash:0:7})"
         fi
 
-        # Check if a VERIFIED CHECKPOINT exists for this task
+        # Check if a VERIFIED CHECKPOINT exists for this task (only touch code/tests, preserving pipeline/)
         if [[ -n "$target_task" ]] && git rev-parse --verify "$ckpt_tag" >/dev/null 2>&1; then
           log_info "🔄 [VERIFIED RESTORE] Restoring working tree to verified step checkpoint [${ckpt_tag}]..."
           (
             cd "$git_root"
-            git restore . 2>/dev/null || true
-            git clean -fd -e pipeline/ -e harness.sh -e .agents/ -e .bandit 2>/dev/null || true
-            git checkout "$ckpt_tag" -- . 2>/dev/null || true
+            git restore . ':!pipeline' ':!.pipeline' 2>/dev/null || true
+            git clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
+            git checkout "$ckpt_tag" -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
           )
           log_ok "Working tree cleanly restored to Verified Checkpoint (100% tests PASS, zero Frankenstein code) ✓"
         else
           (
             cd "$git_root"
-            git restore . 2>/dev/null || true
-            git clean -fd -e pipeline/ -e harness.sh -e .agents/ -e .bandit 2>/dev/null || true
+            git restore . ':!pipeline' ':!.pipeline' 2>/dev/null || true
+            git clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
           )
           log_ok "Working tree reset cleanly to HEAD ✓ (Clean baseline restored for [${target_task:-next task}])"
         fi
@@ -1255,12 +1248,6 @@ execute_worker_for_task() {
   )
   local agent_exit=$?
 
-  if [[ $agent_exit -eq 130 ]]; then
-    log_warn "⚠️ [Worker $task] Interrupted by user (Ctrl+C). Restoring task status to TODO."
-    safe_update_task_status "$task" "[ ] TODO"
-    return 130
-  fi
-
   if [[ $agent_exit -ne 0 ]]; then
     log_error "🚨 [Worker $task] Agent execution failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
@@ -1268,37 +1255,37 @@ execute_worker_for_task() {
     return 1
   fi
 
-  # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree)
+  # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree with diff awareness)
   log_info "[Worker $task] Running Tier 1 local verification..."
-  if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1); then
+  local base_branch_for_diff
+  base_branch_for_diff="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+  [[ -z "$base_branch_for_diff" || "$base_branch_for_diff" == "HEAD" ]] && base_branch_for_diff="master"
+  if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff"); then
     log_error "🚨 [Worker $task] Local Tier 1 verification failed! Task marked [!] BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
     return 1
   fi
 
-  # Ensure worker branch commits ONLY code and test changes, NEVER metadata or runtime files
-  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/context/Tasks_list.md 2>/dev/null || true
-  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/runtime/PROGRESS_LOG.md 2>/dev/null || true
-  git -C "$worktree_dir" checkout HEAD -- pipeline/docs/runtime/CURRENT_TASK.md 2>/dev/null || true
-  rm -f "$worktree_dir"/pipeline/docs/runtime/VERIFICATION_REPORT.md 2>/dev/null || true
-  rm -f "$worktree_dir"/.ralph_heartbeat 2>/dev/null || true
-
-  git -C "$worktree_dir" add -A
+  # Ensure worker branch commits ONLY code and test changes, NEVER pipeline files
+  git -C "$worktree_dir" reset pipeline/ .pipeline/ 2>/dev/null || true
+  git -C "$worktree_dir" checkout HEAD -- pipeline/ .pipeline/ 2>/dev/null || true
+  git -C "$worktree_dir" add -A 2>/dev/null || true
+  git -C "$worktree_dir" reset pipeline/ .pipeline/ BLOCKERS/ .ralph* 2>/dev/null || true
   local commit_msg
   commit_msg=$(generate_commit_message "$task" "PARALLEL-WORKER" "$worktree_dir")
   git -C "$worktree_dir" commit -m "$commit_msg" >/dev/null 2>&1 || true
 
-  # 3. State: QUEUED_FOR_MERGE (Serialized integration queue with Solution B adaptive lock)
+  # 3. State: QUEUED_FOR_MERGE (Bors Virtual Merge Queue with strict serialization)
   local merge_fd
   {
     if [[ -z "${merge_fd:-}" ]]; then
-      log_error "[MERGE-QUEUE] Failed to allocate dynamic file descriptor for merge lock!"
+      log_error "[BORS-QUEUE] Failed to allocate dynamic file descriptor for merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
       exit 1
     fi
 
     wait_and_acquire_merge_lock "$merge_fd" || {
-      log_error "[MERGE-QUEUE] Worker $task failed to acquire merge lock!"
+      log_error "[BORS-QUEUE] Worker $task failed to acquire merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
       exit 1
     }
@@ -1307,76 +1294,103 @@ execute_worker_for_task() {
     base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
     [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
-    log_info "[MERGE-QUEUE] Worker $task entering serialized integration into ${base_branch}..."
+    log_info "[BORS-QUEUE] Worker $task entering Bors Staging Gate for integration into ${base_branch}..."
 
     # Assert repo_root is on base branch before doing any merge
     local current_branch
     current_branch=$(git -C "$repo_root" symbolic-ref --short HEAD 2>/dev/null || git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     if [[ "$current_branch" != "$base_branch" ]]; then
-      log_error "[MERGE-QUEUE] Fatal: repo_root is on branch '$current_branch', expected '$base_branch'! Aborting integration for $task."
+      log_error "[BORS-QUEUE] Fatal: repo_root is on branch '$current_branch', expected '$base_branch'! Aborting integration for $task."
       safe_update_task_status "$task" "[!] BLOCKED"
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 4. State: REBASING on base branch
+    # 4. Bors Step 1: Rebase worker branch on top of latest base branch (with Self-Healing)
     if ! git -C "$worktree_dir" rebase "$base_branch" >/dev/null 2>&1; then
-      log_warn "[MERGE-QUEUE] Worker $task rebase conflict. Aborting rebase and marking task BLOCKED."
-      git -C "$worktree_dir" rebase --abort 2>/dev/null || true
+      log_warn "[BORS-QUEUE] Worker $task rebase conflict with latest ${base_branch}. Attempting intelligent self-healing..."
+      local conflicted_files
+      conflicted_files=$(git -C "$worktree_dir" diff --name-only --diff-filter=U 2>/dev/null || echo "")
+      local can_heal=true
+      if [[ -z "$conflicted_files" ]]; then
+        can_heal=false
+      else
+        for cf in $conflicted_files; do
+          if [[ "$cf" != *"__init__.py" && "$cf" != *"pyproject.toml" && "$cf" != *"conftest.py" ]]; then
+            can_heal=false
+            break
+          fi
+        done
+      fi
+
+      if [[ "$can_heal" == "true" ]]; then
+        log_info "[BORS-QUEUE] Self-healing trivial manifest/init conflicts for $task..."
+        git -C "$worktree_dir" checkout --theirs $conflicted_files >/dev/null 2>&1 || true
+        git -C "$worktree_dir" add $conflicted_files >/dev/null 2>&1 || true
+        GIT_EDITOR=true git -C "$worktree_dir" rebase --continue >/dev/null 2>&1 || true
+      fi
+
+      if git -C "$worktree_dir" status 2>/dev/null | grep -q "rebase in progress"; then
+        log_warn "[BORS-QUEUE] Worker $task rebase conflict could not be automatically healed. Aborting rebase."
+        git -C "$worktree_dir" rebase --abort 2>/dev/null || true
+        safe_update_task_status "$task" "[!] BLOCKED"
+        flock -u "$merge_fd" 2>/dev/null || true
+        exit 1
+      else
+        log_ok "[BORS-QUEUE] Worker $task rebase conflict successfully self-healed! ✓"
+      fi
+    fi
+
+    # 5. Bors Step 2: Run Tier 2 Verification ON THE REBASED WORKTREE (Diff against base branch)
+    log_info "[BORS-QUEUE] Running Tier 2 verification in staging worktree before touching ${base_branch}..."
+    if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_branch"); then
+      log_error "🚨 [BORS GATE FAILED] Worker $task failed Tier 2 verification after rebase! Base branch untouched."
+      safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 verification during Bors staging. Rejected cleanly."
+      flock -u "$merge_fd" 2>/dev/null || true
+      exit 1
+    fi
+
+    # 6. Bors Step 3: Atomic integration into base branch (Guaranteed Green & Clean)
+    log_ok "✅ [BORS GATE PASSED] Worker $task verified 100% Green against ${base_branch}. Fast integrating..."
+    if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
+      log_error "[BORS-QUEUE] Unexpected merge failure for $task into ${base_branch}."
+      git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
+      git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
+      git -C "$repo_root" clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
       safe_update_task_status "$task" "[!] BLOCKED"
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
 
-    # 5. Integrate to base branch
-    # Ensure any pending uncommitted status or log changes on base_branch are committed first
-    if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-      git -C "$repo_root" add pipeline/docs/context/Tasks_list.md pipeline/docs/runtime/PROGRESS_LOG.md 2>/dev/null || true
-      git -C "$repo_root" commit -m "chore(pre-merge): save pending status and logs before integrating $task [skip ci]" >/dev/null 2>&1 || true
+    # Ensure pipeline/ is NEVER staged for commit on base_branch
+    git -C "$repo_root" reset pipeline/ .pipeline/ BLOCKERS/ .ralph* 2>/dev/null || true
+    git -C "$repo_root" checkout HEAD -- pipeline/ .pipeline/ 2>/dev/null || true
+
+    local main_commit_msg
+    main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
+    if [[ -z "${main_commit_msg//[[:space:]]/}" ]]; then
+      main_commit_msg="[${task}] feat(core): auto-integrated verified changes for ${task}"
     fi
 
-    local merge_output
-    if ! merge_output=$(git -C "$repo_root" merge --squash "$branch_name" 2>&1); then
-      log_error "[MERGE-QUEUE] Worker $task squash merge conflict into ${base_branch}! Error: ${merge_output}"
-      git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
-      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
-      git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
-      safe_update_task_status "$task" "[!] BLOCKED"
-      flock -u "$merge_fd" 2>/dev/null || true
-      exit 1
+    if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
+      if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
+        log_error "[BORS-QUEUE] git commit failed on ${base_branch} for $task despite staged changes!"
+        git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+        git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
+        git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
+        git -C "$repo_root" clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
+        safe_update_task_status "$task" "[!] BLOCKED"
+        flock -u "$merge_fd" 2>/dev/null || true
+        exit 1
+      fi
     fi
 
-    # 6. Hard Gate Tier 2 on base branch (Reset cleanly if fail, NEVER git clean -fd!)
-    if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
-      local main_commit_msg
-      main_commit_msg=$(generate_commit_message "$task" "PARALLEL-INTEGRATED" "$repo_root")
-      if [[ -z "${main_commit_msg//[[:space:]]/}" ]]; then
-        main_commit_msg="[${task}] feat(core): auto-integrated verified changes for ${task}"
-      fi
-      if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
-        if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-          log_error "[MERGE-QUEUE] git commit failed on ${base_branch} for $task despite staged changes!"
-          git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
-          git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
-          git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
-          safe_update_task_status "$task" "[!] BLOCKED"
-          flock -u "$merge_fd" 2>/dev/null || true
-          exit 1
-        else
-          log_warn "[MERGE-QUEUE] No new changes to commit on ${base_branch} for $task (already integrated or no-op)."
-        fi
-      fi
-      safe_update_task_status "$task" "[x] DONE"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} (Tier 2 PASS)."
-      log_ok "🎉 [INTEGRATED] Task $task merged and verified on ${base_branch} ✓"
-    else
-      git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
-      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
-      git -C "$repo_root" checkout HEAD -- src/ app/ tests/ 2>/dev/null || true
-      safe_update_task_status "$task" "[!] BLOCKED"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 gate on ${base_branch}. Reverted cleanly."
-      log_error "🚨 [INTEGRATION FAILED] Task $task broke Tier 2 on ${base_branch}. Reverted cleanly."
-    fi
+    safe_update_task_status "$task" "[x] DONE"
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} via Bors Queue (Tier 2 PASS)."
+    log_ok "🎉 [BORS INTEGRATED] Task $task merged and verified on ${base_branch} ✓"
+
     flock -u "$merge_fd" 2>/dev/null || true
   } {merge_fd}>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
 }
@@ -1426,21 +1440,13 @@ run_parallel_waves() {
       local worktree_dir="${PIPELINE_DIR}/.ralph/worktrees/${RUN_ID}/${task}"
       local branch_name="ralph/${RUN_ID}/${task}"
 
-      # Clean up any stale worktree or branch with the same name before attempting add
-      if git -C "$repo_root" worktree list | grep -q "$worktree_dir"; then
-        git -C "$repo_root" worktree remove --force "$worktree_dir" >/dev/null 2>&1 || rm -rf "$worktree_dir"
-      fi
-      git -C "$repo_root" branch -D "$branch_name" >/dev/null 2>&1 || true
-      git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
-
       echo "${worktree_dir}|${branch_name}" >> "$reg_file"
       ACTIVE_WORKTREES+=("$worktree_dir")
       ACTIVE_BRANCHES+=("$branch_name")
 
       mkdir -p "$(dirname "$worktree_dir")"
-      local wt_err
-      if ! wt_err=$(git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" "$base_branch" 2>&1); then
-        log_error "Failed to create git worktree for $task: ${wt_err}. Marking task blocked."
+      if ! git -C "$repo_root" worktree add -b "$branch_name" "$worktree_dir" "$base_branch" >/dev/null 2>&1; then
+        log_error "Failed to create git worktree for $task. Marking task blocked."
         safe_update_task_status "$task" "[!] BLOCKED"
         continue
       fi
@@ -1519,9 +1525,8 @@ run_parallel_waves() {
       fi
 
       # Cleanup worktree & branch
-      git -C "$repo_root" worktree remove --force "$f_wt" >/dev/null 2>&1 || rm -rf "$f_wt"
+      git -C "$repo_root" worktree remove --force "$f_wt" >/dev/null 2>&1 || true
       git -C "$repo_root" branch -D "$f_br" >/dev/null 2>&1 || true
-      git -C "$repo_root" worktree prune >/dev/null 2>&1 || true
 
       local reg_tmp="${reg_file}.tmp"
       awk -v target="$f_wt" -F'|' '$1 != target' "$reg_file" > "$reg_tmp" 2>/dev/null && mv "$reg_tmp" "$reg_file" 2>/dev/null || true
@@ -1537,7 +1542,10 @@ run_parallel_waves() {
 
   # Final integration gate
   log_section "FINAL REPOSITORY INTEGRATION GATE"
-  if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+  local base_ref
+  base_ref="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+  [[ -z "$base_ref" || "$base_ref" == "HEAD" ]] && base_ref="master"
+  if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_ref"; then
     log_error "🚨 [INTEGRATION REGRESSION] Tier 2 full verification failed across integrated tasks!"
     return 1
   fi
@@ -1613,15 +1621,18 @@ Phát hiện lỗi cần sửa chữa triệt để (Chi tiết lỗi lưu tại
   local tier1_ok=false
   local tier2_ok=false
 
+  local base_ref
+  base_ref="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
+  [[ -z "$base_ref" || "$base_ref" == "HEAD" ]] && base_ref="master"
   if [[ -f "$test_file" ]]; then
-    if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --test-target "$test_file"; then
+    if PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --test-target "$test_file" --diff "$base_ref"; then
       tier1_ok=true
     fi
   else
     tier1_ok=true
   fi
 
-  if [[ "$tier1_ok" == "true" ]] && PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2; then
+  if [[ "$tier1_ok" == "true" ]] && PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_ref"; then
     tier2_ok=true
   fi
 

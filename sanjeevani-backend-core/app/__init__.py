@@ -1,2 +1,0 @@
-"""Sanjeevani backend application package."""
-

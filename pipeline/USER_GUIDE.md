@@ -59,43 +59,47 @@ Trong kỷ nguyên 2026, **con người không ngồi gõ code từng dòng**, m
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 🎙️ Hoàn Thiện Kế Hoạch Bằng Phản Biện 2 Model Tự Động (Mẹo 12 & 14)
-Sau khi điền bản thảo 4 file trong `pipeline/docs/context/` (`PROJECT_BRIEF.md`, `Tasks_list.md`, `BOUNDARIES.md`, `TECH_CONTEXT.md`), bạn có 2 cách để hoàn thiện plan:
+### 🎙️ Hoàn Thiện Kế Hoạch Bằng Phỏng Vấn & Phản Biện 2 Giai Đoạn Tự Động (Mẹo 12 & 14)
 
-#### Cách 1: Chạy Vòng Lặp Phản Biện 2 Model Tự Động 100% (Khuyên Dùng)
-Chạy trực tiếp script:
+Quy trình chuẩn mực để biến ý tưởng sơ bộ thành bản kế hoạch 100% không lỗ hổng, sẵn sàng chạy qua đêm:
+
+```
+┌────────────────────────┐      ┌─────────────────────────┐      ┌─────────────────────────┐
+│ 1. Phỏng vấn với LLM   │ ───► │ 2. Dán nội dung vào     │ ───► │ 3. Chạy plan-refine.sh  │
+│    (ChatGPT/Claude/Agy)│      │    INTERVIEW_PLAN.md    │      │    (Phản biện 2 giai đoạn)│
+└────────────────────────┘      └─────────────────────────┘      └────────────┬────────────┘
+                                                                              │
+                                 ┌────────────────────────────────────────────┴────────────┐
+                                 ▼                                                         ▼
+                  ┌───────────────────────────────┐         ┌───────────────────────────────┐
+                  │ Giai đoạn 1: Phản biện Kế hoạch│ ──PASS─►│ Giai đoạn 2: Phản biện Kỹ thuật │
+                  │ (Lỗ hổng logic, edge cases,   │         │ (Atomic <=5-8 files, bottom-up│
+                  │  giả định ngầm trong Plan)    │         │  dependencies, test gates TDD)│
+                  └───────────────────────────────┘         └───────────────┬───────────────┘
+                                                                            │ APPROVED
+                                                                            ▼
+                                                            ┌───────────────────────────────┐
+                                                            │ Tự động seal & Chạy harness.sh│
+                                                            └───────────────────────────────┘
+```
+
+#### Bước 1: Phỏng vấn nghiệp vụ với LLM (Prompt Mẫu)
+Mở bất kỳ LLM nào (chat UI), copy prompt mẫu có sẵn tại đầu file `pipeline/docs/context/INTERVIEW_PLAN.md` để LLM phỏng vấn bạn, bóc tách bài toán và lên kế hoạch giải pháp sơ bộ.
+
+#### Bước 2: Điền kế hoạch vào `pipeline/docs/context/INTERVIEW_PLAN.md`
+Sao chép kết quả đã thống nhất vào cấu trúc chuẩn của `INTERVIEW_PLAN.md` (bao gồm cả các giả định ngầm hoặc điểm chưa chắc chắn để AI mổ xẻ).
+
+#### Bước 3: Khởi chạy Vòng lặp Phản biện Tự động (`plan-refine.sh`)
 ```bash
 ./pipeline/scripts/plan-refine.sh
 # Hoặc gọi nhanh qua:
 ./pipeline/scripts/plan.sh refine
 ```
-Script sẽ khởi tạo một vòng lặp giữa:
-- **Model 1 (Critic / Lead Architect)**: Đóng vai trò kiến trúc sư trưởng khắt khe, rà soát 4 tiêu chí (Logic holes, Failure modes, Scope boundaries, Test cases & DoD cho từng task).
-- **Model 2 (Planner / Author)**: Đọc phản biện, trả lời câu hỏi và **trực tiếp cập nhật các file trên đĩa** (phân rã cụm logic, bổ sung test case chi tiết vào `Tasks_list.md`).
-- Toàn bộ tranh biện được ghi vào `pipeline/docs/runtime/PLAN_DEBATE.md`.
-- Vòng lặp tự động dừng và **tự động niêm phong (`plan.sh seal`)** ngay khi Critic chấm `PLAN_REVIEW: APPROVED` 100%.
-
-#### Cách 2: Phỏng Vấn Nghiệp Vụ Thủ Công Qua Chat UI
-Nếu muốn tương tác trực tiếp từng câu, mở cửa sổ chat với AI và dán prompt:
-
-```markdown
-Tôi muốn xây dựng tính năng: "[Mô tả tính năng của bạn]".
-
-Trước khi sinh bất kỳ code nào:
-1. Hãy đọc toàn bộ docs kiến trúc trong `pipeline/docs/context/` và `BOUNDARIES.md`.
-2. Đóng vai trò là Lead Architect và PHỎNG VẤN TÔI. Hãy đặt ra từ 3 - 5 câu hỏi sắc bén nhất về:
-   - Các lỗ hổng logic / ranh giới nghiệp vụ mà tôi chưa làm rõ.
-   - Các trường hợp lỗi (failure modes) và side-effects đối với hệ thống hiện tại.
-   - Acceptance Criteria và cách kiểm chứng (DoD) có thể đo lường được.
-Hãy bắt đầu hỏi!
-```
-Sau khi trả lời xong, yêu cầu AI:
-```markdown
-Dựa trên những gì chúng ta vừa thống nhất:
-1. Phân rã thành các Cụm Logic độc lập (Mẹo 14 - Foundation/Model dùng chung làm trước, API/Giao diện làm sau).
-2. Lên danh sách test cases cụ thể cho từng cụm.
-3. Điền vào bảng `pipeline/docs/context/Tasks_list.md`.
-```
+Script sẽ khởi tạo tranh biện đối kháng giữa **Critic (Lead Architect)** và **Planner (System Architect)** theo 2 giai đoạn tuần tự:
+- **Giai đoạn 1 (Bắt buộc làm trước): Phản biện Kế hoạch của User**: Critic đọc `INTERVIEW_PLAN.md`, soi từng lỗ hổng logic, kịch bản lỗi, giả định ngầm và tính khả thi kiến trúc. Nếu còn lỗ hổng, Critic REJECT ngay tại Giai đoạn 1 để Planner bổ sung hoàn thiện.
+- **Giai đoạn 2 (Thực hiện sau): Phản biện Chi tiết Kỹ thuật**: Khi kế hoạch đã vững, Critic chuyển sang rà soát `Tasks_list.md` (kích thước task atomic <= 5-8 files, thứ tự phụ thuộc bottom-up, test strategy TDD Red-Green, cấu trúc bảng 7 cột).
+- Toàn bộ tranh biện được ghi nhận tại `pipeline/docs/runtime/PLAN_DEBATE.md`.
+- Khi cả 2 giai đoạn đạt 100%, script tự động commit context và niêm phong mật mã (`plan.sh seal`). Sẵn sàng chạy `./harness.sh`!
 
 ### 🔒 Chi Tiết Bước Niêm Phong Kế Hoạch & Tự Phục Hồi Context (Plan Sealing & Auto-Restore)
 Sau khi có `Tasks_list.md`, bạn chạy lệnh trên terminal:

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# setup.sh — Next-Gen Installer & Infrastructure Sync for Enterprise Pipeline
-# 
+# setup.sh — Cross-Platform Installer & Infrastructure Sync for Enterprise Pipeline
+# Works on Linux, WSL, macOS, and Windows Git Bash (MINGW64 / MSYS2).
+#
 # Usage:
 #   ./pipeline/scripts/setup.sh /path/to/target-proj              # Install or update infrastructure
 #   ./pipeline/scripts/setup.sh /path/to/target-proj --override   # Force-overwrite all infrastructure & agents
@@ -28,6 +29,14 @@ if [[ "$TARGET_DIR" == --* ]]; then
   TARGET_DIR="."
 fi
 
+# Normalize Windows-style paths (e.g., D:\... -> D:/...)
+TARGET_DIR="${TARGET_DIR//\\//}"
+
+# If running inside WSL and user passes a Windows drive path (e.g. D:/...), translate with wslpath
+if command -v wslpath >/dev/null 2>&1 && [[ "$TARGET_DIR" =~ ^[A-Za-z]:/ ]]; then
+  TARGET_DIR="$(wslpath -u "$TARGET_DIR" 2>/dev/null || echo "$TARGET_DIR")"
+fi
+
 mkdir -p "${TARGET_DIR}"
 TARGET_DIR="$(cd "${TARGET_DIR}" && pwd)"
 
@@ -43,34 +52,108 @@ if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
   echo "📦 Updating pipeline infrastructure (scripts, core protocols, presets, engine, prompts)..."
   mkdir -p "${TARGET_DIR}/pipeline"
 
-  if [[ -d "${TARGET_DIR}/pipeline/docs/context" ]] && [[ "$OVERRIDE_ALL" == false ]]; then
-    # Preserve existing context while updating infrastructure
-    echo "🛡️ Preserving existing project context (PROJECT_BRIEF.md, Tasks_list.md)..."
-    TMP_CONTEXT="$(mktemp -d)"
-    cp -r "${TARGET_DIR}/pipeline/docs/context"/* "$TMP_CONTEXT/" 2>/dev/null || true
-    
-    cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
-    
-    mkdir -p "${TARGET_DIR}/pipeline/docs/context"
-    cp -r "$TMP_CONTEXT"/* "${TARGET_DIR}/pipeline/docs/context/" 2>/dev/null || true
-    rm -rf "$TMP_CONTEXT"
-    echo "✅ Infrastructure updated, project context preserved."
-  else
-    if [[ "$OVERRIDE_ALL" == true ]]; then
-      echo "⚠️ --override-all specified: Overwriting entire pipeline including context files."
+  # Core infrastructure directories
+  for dir_name in "engine" "presets" "prompts" "scripts" "tests"; do
+    if [[ -d "${PIPELINE_DIR}/${dir_name}" ]]; then
+      mkdir -p "${TARGET_DIR}/pipeline/${dir_name}"
+      cp -rf "${PIPELINE_DIR}/${dir_name}"/* "${TARGET_DIR}/pipeline/${dir_name}/" 2>/dev/null || true
     fi
-    cp -r "${PIPELINE_DIR}"/. "${TARGET_DIR}/pipeline/"
+  done
+
+  # Documentation: Core protocols (Always synchronized)
+  mkdir -p "${TARGET_DIR}/pipeline/docs/core"
+  if [[ -d "${PIPELINE_DIR}/docs/core" ]]; then
+    cp -rf "${PIPELINE_DIR}/docs/core"/* "${TARGET_DIR}/pipeline/docs/core/" 2>/dev/null || true
   fi
 
-  # Purge any cache or runtime residue from target pipeline template
+  # Documentation: Root doc files
+  for doc_file in "README.md" "validation-status.md"; do
+    if [[ -f "${PIPELINE_DIR}/docs/${doc_file}" ]]; then
+      cp -f "${PIPELINE_DIR}/docs/${doc_file}" "${TARGET_DIR}/pipeline/docs/${doc_file}" 2>/dev/null || true
+    fi
+  done
+
+  # Documentation: Project Context (Preserve existing unless --override-all)
+  mkdir -p "${TARGET_DIR}/pipeline/docs/context"
+  if [[ -d "${PIPELINE_DIR}/docs/context" ]]; then
+    if [[ "$OVERRIDE_ALL" == true ]]; then
+      echo "⚠️ --override-all specified: Overwriting entire project context with fresh templates."
+      cp -rf "${PIPELINE_DIR}/docs/context"/* "${TARGET_DIR}/pipeline/docs/context/" 2>/dev/null || true
+    else
+      echo "🛡️ Checking project context files (preserving existing, skipping replace)..."
+      for f in "${PIPELINE_DIR}/docs/context"/*.md; do
+        if [[ -f "$f" ]]; then
+          base_name="$(basename "$f")"
+          
+          # Check all candidate locations where user might have existing context
+          existing_path=""
+          for candidate in \
+            "${TARGET_DIR}/pipeline/docs/context/${base_name}" \
+            "${TARGET_DIR}/pipeline/context/docs/${base_name}" \
+            "${TARGET_DIR}/context/docs/${base_name}" \
+            "${TARGET_DIR}/docs/context/${base_name}"; do
+            if [[ -f "$candidate" ]]; then
+              existing_path="$candidate"
+              break
+            fi
+          done
+
+          if [[ -n "$existing_path" ]]; then
+            # File already exists: do NOT replace!
+            # If it was in an alternate path, ensure it is available in pipeline/docs/context
+            if [[ "$existing_path" != "${TARGET_DIR}/pipeline/docs/context/${base_name}" ]]; then
+              cp -f "$existing_path" "${TARGET_DIR}/pipeline/docs/context/${base_name}" 2>/dev/null || true
+              echo "   - 🔄 [SYNC] Preserved user file from $(basename "$(dirname "$existing_path")")/${base_name} (not replaced)"
+            else
+              echo "   - ⏭️ [SKIP] Already exists: ${base_name} (skipped, not replaced)"
+            fi
+          else
+            # File does not exist yet: initialize from template
+            cp -f "$f" "${TARGET_DIR}/pipeline/docs/context/${base_name}" 2>/dev/null || true
+            echo "   - ➕ [NEW] Initialized template: ${base_name}"
+          fi
+        fi
+      done
+      echo "✅ Context files processed cleanly (0 existing files replaced)."
+    fi
+  fi
+
+  # Documentation: Runtime directories (Clean skeleton, NEVER copy symlinks or run histories)
+  mkdir -p "${TARGET_DIR}/pipeline/docs/runtime/BLOCKERS" \
+           "${TARGET_DIR}/pipeline/docs/runtime/ITERATIONS"
+  if [[ -d "${PIPELINE_DIR}/docs/runtime" ]]; then
+    for f in "${PIPELINE_DIR}/docs/runtime"/*.md; do
+      if [[ -f "$f" ]]; then
+        base_name="$(basename "$f")"
+        if [[ ! -f "${TARGET_DIR}/pipeline/docs/runtime/${base_name}" ]] || [[ "$OVERRIDE_ALL" == true ]]; then
+          cp -f "$f" "${TARGET_DIR}/pipeline/docs/runtime/${base_name}" 2>/dev/null || true
+        fi
+      fi
+    done
+  fi
+
+  # Root pipeline files
+  for root_file in "AGENT_GUIDE.md" "CLAUDE.md" "LEARNINGS.md" "PIPELINE_UPGRADE_SUMMARY.md" "USER_GUIDE.md" "setup.sh"; do
+    if [[ -f "${PIPELINE_DIR}/${root_file}" ]]; then
+      cp -f "${PIPELINE_DIR}/${root_file}" "${TARGET_DIR}/pipeline/${root_file}" 2>/dev/null || true
+    fi
+  done
+
+  # Purge any cache or Windows zone residue from target pipeline
   echo "🧹 Ensuring target pipeline is clean (no cache, no temporary logs)..."
   find "${TARGET_DIR}/pipeline" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
   find "${TARGET_DIR}/pipeline" -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
   find "${TARGET_DIR}/pipeline" -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
   find "${TARGET_DIR}/pipeline" -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+  find "${TARGET_DIR}/pipeline" -type f -name "*:Zone.Identifier" -delete 2>/dev/null || true
   rm -rf "${TARGET_DIR}/pipeline/.ralph" \
+         "${TARGET_DIR}/pipeline/docs/runtime/CURRENT" \
+         "${TARGET_DIR}/pipeline/docs/runtime/PREV" \
+         "${TARGET_DIR}/pipeline/docs/runtime/runs" \
          "${TARGET_DIR}/pipeline/docs/runtime/session_*.log" \
+         "${TARGET_DIR}/pipeline/docs/runtime/session_*.jsonl" \
          "${TARGET_DIR}/pipeline/docs/runtime/PLAN_SEAL.sha256" \
+         "${TARGET_DIR}/pipeline/docs/runtime/PLAN_SEAL_COMMIT" \
          "${TARGET_DIR}/pipeline/docs/runtime/ITERATIONS"/iter_*.md 2>/dev/null || true
 fi
 
@@ -96,7 +179,7 @@ cat << 'EOF' > "${ROOT_HARNESS}"
 #!/usr/bin/env bash
 exec "$(dirname "$0")/pipeline/scripts/harness.sh" "$@"
 EOF
-chmod +x "${ROOT_HARNESS}"
+chmod +x "${ROOT_HARNESS}" 2>/dev/null || true
 
 # 5. Overwrite / Update pipeline/setup.sh wrapper
 PIPELINE_SETUP="${TARGET_DIR}/pipeline/setup.sh"
@@ -104,7 +187,7 @@ cat << 'EOF' > "${PIPELINE_SETUP}"
 #!/usr/bin/env bash
 exec "$(dirname "$0")/scripts/setup.sh" "$@"
 EOF
-chmod +x "${PIPELINE_SETUP}"
+chmod +x "${PIPELINE_SETUP}" 2>/dev/null || true
 
 # 6. Initialize pyproject.toml if missing
 PYPROJECT="${TARGET_DIR}/pyproject.toml"
@@ -149,13 +232,16 @@ fi
 # 7. Create .gitignore entries if needed
 GITIGNORE="${TARGET_DIR}/.gitignore"
 if [[ -f "${GITIGNORE}" ]]; then
-  if ! grep -q "\.ralph" "${GITIGNORE}"; then
+  if ! grep -q "\.ralph" "${GITIGNORE}" 2>/dev/null; then
     echo "" >> "${GITIGNORE}"
     echo "# Agent Pipeline Run Logs & State" >> "${GITIGNORE}"
     echo "pipeline/.ralph/" >> "${GITIGNORE}"
     echo "pipeline/docs/runtime/session_*.jsonl" >> "${GITIGNORE}"
+    echo "pipeline/docs/runtime/CURRENT" >> "${GITIGNORE}"
+    echo "pipeline/docs/runtime/PREV" >> "${GITIGNORE}"
+    echo "pipeline/docs/runtime/runs/" >> "${GITIGNORE}"
   fi
-  if ! grep -q "\.venv" "${GITIGNORE}"; then
+  if ! grep -q "\.venv" "${GITIGNORE}" 2>/dev/null; then
     echo ".venv/" >> "${GITIGNORE}"
   fi
 fi
@@ -164,20 +250,36 @@ fi
 if command -v uv >/dev/null 2>&1; then
   echo "⚡ [UV] Ensuring virtual environment and syncing dependencies via uv..."
   if [[ ! -d "${TARGET_DIR}/.venv" ]]; then
-    uv venv "${TARGET_DIR}/.venv"
+    uv venv "${TARGET_DIR}/.venv" 2>/dev/null || true
   fi
+
+  # Detect Python executable location (Linux/WSL uses .venv/bin/python, Windows uses .venv/Scripts/python.exe)
+  VENV_PYTHON=""
+  if [[ -f "${TARGET_DIR}/.venv/bin/python" ]]; then
+    VENV_PYTHON="${TARGET_DIR}/.venv/bin/python"
+  elif [[ -f "${TARGET_DIR}/.venv/Scripts/python.exe" ]]; then
+    VENV_PYTHON="${TARGET_DIR}/.venv/Scripts/python.exe"
+  elif [[ -f "${TARGET_DIR}/.venv/Scripts/python" ]]; then
+    VENV_PYTHON="${TARGET_DIR}/.venv/Scripts/python"
+  fi
+
+  UV_INSTALL_ARGS=()
+  if [[ -n "$VENV_PYTHON" ]]; then
+    UV_INSTALL_ARGS=("--python" "$VENV_PYTHON")
+  fi
+
   if [[ -f "${TARGET_DIR}/pyproject.toml" ]]; then
-    uv pip install --python "${TARGET_DIR}/.venv/bin/python" -e "${TARGET_DIR}" 2>/dev/null || true
+    uv pip install "${UV_INSTALL_ARGS[@]}" -e "${TARGET_DIR}" 2>/dev/null || true
   fi
   if [[ -f "${TARGET_DIR}/requirements.txt" ]]; then
-    uv pip install --python "${TARGET_DIR}/.venv/bin/python" -r "${TARGET_DIR}/requirements.txt" 2>/dev/null || true
+    uv pip install "${UV_INSTALL_ARGS[@]}" -r "${TARGET_DIR}/requirements.txt" 2>/dev/null || true
   fi
-  echo "✅ [UV] Virtualenv and dependencies ready in: ${TARGET_DIR}/.venv"
+  echo "✅ [UV] Virtualenv and dependencies checked in: ${TARGET_DIR}/.venv"
 else
   echo "⚠️ [UV] 'uv' CLI not found. Install uv (https://astral.sh/uv) for instant dependency management."
 fi
 
 echo ""
-echo "✅ Pipeline successfully installed / updated!"
+echo "✅ Pipeline successfully installed / updated into [${TARGET_DIR}]!"
 echo "💡 To test harness offline (0 token): ${TARGET_DIR}/pipeline/scripts/selftest.sh"
 echo "💡 To run autonomous loop: ${TARGET_DIR}/harness.sh"

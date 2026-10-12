@@ -60,6 +60,7 @@ Nằm hoàn toàn bên trong `pipeline/docs/context/`:
 
 | # | Đường dẫn File | Vai trò | Chi tiết Cần Thay Đổi |
 |---|---|---|---|
+| 0 | `pipeline/docs/context/INTERVIEW_PLAN.md` | Kế hoạch Nghiệp vụ sau Phỏng vấn LLM | Ghi nhận kết quả phỏng vấn giữa bạn và LLM. Đầu vào cho `plan-refine.sh` phản biện Giai đoạn 1. |
 | 1 | `pipeline/docs/context/PROJECT_BRIEF.md` | Bức tranh tổng quan dự án | Tên dự án, mục tiêu kinh doanh, Tech Stack chính, Definition of Done (DoD) và Roadmap. |
 | 2 | `pipeline/docs/context/TECH_CONTEXT.md` | Bối cảnh kỹ thuật & Môi trường | Phiên bản Python/Node/Go, thư viện phụ thuộc, DB local/test, lệnh run/build/test. |
 | 3 | `pipeline/docs/context/BOUNDARIES.md` | Giới hạn quyền hạn cho AI | File paths được sửa (`src/**`, `tests/**`), cấm sửa (`.env`), database write/drop limits. |
@@ -72,7 +73,16 @@ Nằm hoàn toàn bên trong `pipeline/docs/context/`:
 
 ## 4. Cách Sử Dụng & Khởi Chạy Pipeline
 
-### Bước 1: Khai báo Task Queue vào `Tasks_list.md`
+### Bước 1: Phỏng vấn LLM & Điền vào `INTERVIEW_PLAN.md`
+Phỏng vấn bài toán với LLM theo prompt mẫu có sẵn, sau đó dán kết quả vào `pipeline/docs/context/INTERVIEW_PLAN.md`.
+
+### Bước 2: Tinh chỉnh Kế hoạch Tự động (`plan-refine.sh`)
+Chạy `./pipeline/scripts/plan-refine.sh` để 2 model phản biện tự động:
+- Giai đoạn 1: Phản biện kế hoạch nghiệp vụ của user trong `INTERVIEW_PLAN.md`.
+- Giai đoạn 2: Phân rã và phản biện chi tiết kỹ thuật trong `Tasks_list.md`.
+- Kế hoạch sau khi được duyệt sẽ tự động niêm phong SHA-256 (`plan.sh seal`).
+
+### Bước 3: Khởi chạy Vòng lặp Tự động (Ralph Loop)
 Chỉ cần điền các task cần làm vào `pipeline/docs/context/Tasks_list.md` với trạng thái `[ ] TODO`.
 
 ### Bước 2: Khởi chạy Vòng lặp Tự động (Ralph Loop)

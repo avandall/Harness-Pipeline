@@ -201,14 +201,20 @@ get_workspace_latest_mtime() {
   local dir="$1"
   local latest=0
   if [[ -d "$dir" ]]; then
-    latest=$(find "$dir" -maxdepth 5 -type f \
-      -not -path "*/.git/*" \
-      -not -path "*/.ralph/*" \
-      -not -name "*.log" \
-      -not -name "*.err" \
-      -not -name "*.heartbeat" \
-      -printf '%T@\n' 2>/dev/null | sort -nr | head -n 1 | cut -d. -f1 || echo 0)
+    latest=$(
+      set +o pipefail
+      find "$dir" -maxdepth 5 -type f \
+        -not -path "*/.git/*" \
+        -not -path "*/.ralph/*" \
+        -not -path "*/.venv/*" \
+        -not -path "*/__pycache__/*" \
+        -not -name "*.log" \
+        -not -name "*.err" \
+        -not -name "*.heartbeat" \
+        -printf '%T@\n' 2>/dev/null | sort -nr | head -n 1 | cut -d. -f1
+    )
   fi
+  latest=$(echo "$latest" | grep -oE '^[0-9]+' | head -n 1 || true)
   [[ -z "$latest" ]] && latest=0
   echo "$latest"
 }

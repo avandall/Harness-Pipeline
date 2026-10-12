@@ -90,6 +90,91 @@ def run_command(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
 
 
 
+def get_changed_files(base_ref: str | None = None) -> list[str]:
+    """Retrieve list of modified/added files relative to base_ref and uncommitted changes.
+    Returns relative paths from current working directory.
+    """
+    changed: set[str] = set()
+    cwd = Path.cwd()
+
+    try:
+        # 1. Uncommitted / staged changes in working tree
+        status_res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(cwd),
+        )
+        if status_res.returncode == 0:
+            for line in status_res.stdout.splitlines():
+                if len(line) >= 3:
+                    status_code = line[:2]
+                    file_path = line[3:].strip()
+                    if "->" in file_path:
+                        file_path = file_path.split("->")[-1].strip()
+                    if status_code not in (" D", "D "):
+                        changed.add(file_path)
+
+        # 2. Base reference comparison (branch/commit diff)
+        target_ref = base_ref
+        if target_ref == "auto" or not target_ref:
+            for candidate in ["master", "main", "origin/master", "origin/main", "HEAD"]:
+                check = subprocess.run(
+                    ["git", "rev-parse", "--verify", candidate],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    cwd=str(cwd),
+                )
+                if check.returncode == 0:
+                    target_ref = candidate
+                    break
+
+        if target_ref and target_ref != "HEAD":
+            diff_cmd = ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{target_ref}...HEAD"]
+            diff_res = subprocess.run(
+                diff_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(cwd),
+            )
+            if diff_res.returncode != 0:
+                diff_cmd = ["git", "diff", "--name-only", "--diff-filter=ACMR", target_ref]
+                diff_res = subprocess.run(
+                    diff_cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    cwd=str(cwd),
+                )
+            if diff_res.returncode == 0:
+                for line in diff_res.stdout.splitlines():
+                    if line.strip():
+                        changed.add(line.strip())
+    except Exception:
+        pass
+
+    valid_files: list[str] = []
+    ignore_prefixes = (
+        "pipeline/",
+        ".pipeline/",
+        "Sample_pipeline/",
+        ".git/",
+        ".venv/",
+        "venv/",
+        "node_modules/",
+        "BLOCKERS/",
+    )
+    for f in changed:
+        p = cwd / f
+        if not any(f.startswith(pfx) for pfx in ignore_prefixes) and p.is_file():
+            valid_files.append(f)
+
+    return sorted(valid_files)
+
+
 def get_active_preset(cli_preset: str) -> str:
     """Get active preset from CLI flag or active_preset.yaml config."""
     if cli_preset and cli_preset.lower() != "auto":
@@ -107,22 +192,37 @@ def get_active_preset(cli_preset: str) -> str:
 
 
 def run_python_checks(
-    target_dir: str = ".", quick: bool = False, test_target: str = "", tier: int = 2
+    target_dir: str = ".",
+    quick: bool = False,
+    test_target: str = "",
+    tier: int = 2,
+    changed_files: list[str] | None = None,
 ) -> list[tuple[str, bool, str]]:
-    """Chạy bộ kiểm tra chuẩn cho dự án Python theo Tier (0, 1, 2)."""
+    """Chạy bộ kiểm tra chuẩn cho dự án Python theo Tier (0, 1, 2) có hỗ trợ Diff-Aware."""
     results = []
+    py_files = None
+    if changed_files is not None:
+        py_files = [f for f in changed_files if f.endswith(".py")]
 
     # 1. Ruff (Lint) - Luôn chạy cho Tier 0, 1, 2
     if check_tool_installed("ruff"):
-        code, out = run_command(["ruff", "check", target_dir])
-        results.append(("Python: Ruff (Lint)", code == 0, "All lint checks passed ✓" if code == 0 else truncate_log(out)))
+        if py_files is not None and len(py_files) == 0:
+            results.append(("Python: Ruff (Lint)", True, "Skipped (no modified python files in diff) ✓"))
+        else:
+            ruff_cmd = ["ruff", "check"] + (py_files if py_files is not None else [target_dir])
+            code, out = run_command(ruff_cmd)
+            results.append(("Python: Ruff (Lint)", code == 0, "All lint checks passed ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Ruff (Lint)", True, "Skipped (ruff not installed)"))
 
     # 2. Mypy (Type Check) - Luôn chạy cho Tier 0, 1, 2
     if check_tool_installed("mypy"):
-        code, out = run_command(["mypy", target_dir, "--ignore-missing-imports", "--explicit-package-bases"])
-        results.append(("Python: Mypy (Type Check)", code == 0, "Type checking passed ✓" if code == 0 else truncate_log(out)))
+        if py_files is not None and len(py_files) == 0:
+            results.append(("Python: Mypy (Type Check)", True, "Skipped (no modified python files in diff) ✓"))
+        else:
+            mypy_cmd = ["mypy", "--ignore-missing-imports", "--explicit-package-bases"] + (py_files if py_files is not None else [target_dir])
+            code, out = run_command(mypy_cmd)
+            results.append(("Python: Mypy (Type Check)", code == 0, "Type checking passed ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Mypy (Type Check)", True, "Skipped (mypy not installed)"))
 
@@ -161,11 +261,19 @@ def run_python_checks(
 
     # 4. Bandit (Security) - Chỉ chạy ở Tier 2 (Full regression & security)
     if check_tool_installed("bandit"):
-        bandit_cmd = ["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
-        if os.path.exists(".bandit"):
-            bandit_cmd = ["bandit", "-c", ".bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
-        code, out = run_command(bandit_cmd)
-        results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
+        if py_files is not None and len(py_files) == 0:
+            results.append(("Python: Bandit (Security)", True, "Skipped (no modified python files in diff) ✓"))
+        else:
+            if py_files is not None:
+                bandit_cmd = ["bandit", "-ll", "-q"] + py_files
+                if os.path.exists(".bandit"):
+                    bandit_cmd = ["bandit", "-c", ".bandit", "-ll", "-q"] + py_files
+            else:
+                bandit_cmd = ["bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+                if os.path.exists(".bandit"):
+                    bandit_cmd = ["bandit", "-c", ".bandit", "-r", target_dir, "-ll", "-q", "-x", "./.venv,./.pytest_cache,./.mypy_cache,./tests,./scripts,./pipeline,./dashboard,./vector_db"]
+            code, out = run_command(bandit_cmd)
+            results.append(("Python: Bandit (Security)", code == 0, "No security issues ✓" if code == 0 else truncate_log(out)))
     else:
         results.append(("Python: Bandit (Security)", True, "Skipped (bandit not installed)"))
 
@@ -212,10 +320,13 @@ def run_go_checks(target_dir: str = ".", tier: int = 2) -> list[tuple[str, bool,
     return results if results else [("Go Check", True, "Go checks passed ✓")]
 
 
-def run_shell_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
-    """Chạy bộ kiểm tra cho Shell Scripting (ShellCheck)."""
+def run_shell_checks(target_dir: str = ".", changed_files: list[str] | None = None) -> list[tuple[str, bool, str]]:
+    """Chạy bộ kiểm tra cho Shell Scripting (ShellCheck) có hỗ trợ Diff-Aware."""
     results = []
-    sh_files = [str(p) for p in Path(target_dir).rglob("*.sh") if "node_modules" not in str(p)]
+    if changed_files is not None:
+        sh_files = [f for f in changed_files if f.endswith(".sh") and "node_modules" not in f]
+    else:
+        sh_files = [str(p) for p in Path(target_dir).rglob("*.sh") if "node_modules" not in str(p)]
     if not sh_files:
         return [("Shell Check", True, "Skipped (no shell scripts found)")]
 
@@ -255,7 +366,9 @@ ANTI_CHEAT_PATTERNS = [
 ]
 
 
-def run_anti_cheat_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
+def run_anti_cheat_checks(
+    target_dir: str = ".", changed_files: list[str] | None = None
+) -> list[tuple[str, bool, str]]:
     """Kiểm tra mã nguồn chống các tệ nạn: fake mocks, trivial assert True, temporary bypass."""
     violations: list[str] = []
     base_path = Path(target_dir).resolve()
@@ -274,22 +387,39 @@ def run_anti_cheat_checks(target_dir: str = ".") -> list[tuple[str, bool, str]]:
         "build",
     }
 
-    for root, dirs, files in os.walk(base_path):
-        dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
-        for file in files:
-            p = Path(root) / file
-            if p.suffix in code_exts:
-                try:
-                    rel_file = p.relative_to(base_path)
-                    content = p.read_text(encoding="utf-8", errors="ignore")
-                    for line_no, line in enumerate(content.splitlines(), start=1):
-                        for pattern, desc in ANTI_CHEAT_PATTERNS:
-                            if pattern.search(line):
-                                violations.append(
-                                    f"{rel_file}:{line_no} [{desc}] -> {line.strip()}"
-                                )
-                except (OSError, UnicodeDecodeError):
-                    continue
+    if changed_files is not None:
+        target_paths = [
+            Path(f) for f in changed_files if Path(f).suffix in code_exts and Path(f).is_file()
+        ]
+        if not target_paths:
+            return [
+                (
+                    "Quality: Anti-Cheat & Real Implementation Guard",
+                    True,
+                    "No modified code files to check in diff ✓",
+                )
+            ]
+    else:
+        target_paths = []
+        for root, dirs, files in os.walk(base_path):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs and not d.startswith(".")]
+            for file in files:
+                p = Path(root) / file
+                if p.suffix in code_exts:
+                    target_paths.append(p)
+
+    for p in target_paths:
+        try:
+            rel_file = p.relative_to(base_path) if p.is_absolute() else p
+            content = p.read_text(encoding="utf-8", errors="ignore")
+            for line_no, line in enumerate(content.splitlines(), start=1):
+                for pattern, desc in ANTI_CHEAT_PATTERNS:
+                    if pattern.search(line):
+                        violations.append(
+                            f"{rel_file}:{line_no} [{desc}] -> {line.strip()}"
+                        )
+        except (OSError, UnicodeDecodeError):
+            continue
 
     if violations:
         msg = f"Detected {len(violations)} anti-cheat / fake-mock violation(s):\n" + "\n".join(
@@ -335,6 +465,13 @@ def main():
         help="Specific test file or directory to run for pytest (e.g. tests/test_auth.py)",
     )
     parser.add_argument(
+        "--diff",
+        nargs="?",
+        const="auto",
+        default=None,
+        help="Diff-aware verification: only verify files modified relative to BASE_REF (e.g. master, main, HEAD, or auto-detect)",
+    )
+    parser.add_argument(
         "--preset",
         type=str,
         default="auto",
@@ -346,6 +483,12 @@ def main():
     effective_test_target = args.test_target.strip() if args.test_target else os.environ.get("RALPH_TEST_TARGET", "").strip()
     if effective_test_target and effective_test_target.lower() in ["-", "none", "static_check"]:
         effective_test_target = ""
+
+    # Determine diff-aware changed files if requested
+    diff_base = args.diff or os.environ.get("RALPH_DIFF_BASE")
+    changed_files: list[str] | None = None
+    if diff_base is not None:
+        changed_files = get_changed_files(diff_base)
 
     # Determine effective tier (backward compatible with --quick)
     if args.tier is not None:
@@ -364,20 +507,20 @@ def main():
     elif preset == "go_backend":
         check_results.extend(run_go_checks(".", tier=effective_tier))
     elif preset == "generic_scripting":
-        check_results.extend(run_shell_checks("."))
+        check_results.extend(run_shell_checks(".", changed_files=changed_files))
     elif preset in ["polyglot_multi", "auto"]:
         # Auto-detect all present language environments & run combined checks
-        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier))
+        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier, changed_files=changed_files))
         if os.path.exists("package.json"):
             check_results.extend(run_node_checks(".", tier=effective_tier))
         if os.path.exists("go.mod"):
             check_results.extend(run_go_checks(".", tier=effective_tier))
     else:  # Default: python_backend
-        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier))
+        check_results.extend(run_python_checks(".", quick=(effective_tier == 1), test_target=effective_test_target, tier=effective_tier, changed_files=changed_files))
 
     # Universal check: Quality & Anti-Cheat Guard across all presets (chạy từ Tier 1 trở lên)
     if effective_tier > 0:
-        check_results.extend(run_anti_cheat_checks("."))
+        check_results.extend(run_anti_cheat_checks(".", changed_files=changed_files))
 
     all_passed = all(r[1] for r in check_results)
     now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M")

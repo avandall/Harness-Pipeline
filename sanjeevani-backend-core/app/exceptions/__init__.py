@@ -1,2 +1,0 @@
-"""Application exception handling package."""
-

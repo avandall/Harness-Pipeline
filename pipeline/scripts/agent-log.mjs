@@ -19,6 +19,7 @@ try {
   let timedOut = false;
   let stalled = false;
   let extended = false;
+  let quotaExhausted = false;
 
   // Check for auto-compaction triggers
   if (content.includes('compact_boundary') || content.includes('Context limit reached') || content.includes('Conversation history truncated')) {
@@ -56,6 +57,17 @@ try {
     retryableApiError = true;
   }
 
+  // Provider quota / rate-limit exhaustion (e.g. AGY RESOURCE_EXHAUSTED code 429): infra failure, NOT a task failure.
+  if (
+    content.includes('RESOURCE_EXHAUSTED') ||
+    content.includes('Individual quota reached') ||
+    /quota (exceeded|reached)/i.test(content) ||
+    /code 429/.test(content)
+  ) {
+    quotaExhausted = true;
+    retryableApiError = true;
+  }
+
   // Check for general failure
   if (content.includes('Execution failed') || content.includes('FATAL ERROR') || timedOut) {
     failed = true;
@@ -67,7 +79,8 @@ try {
     failed,
     timedOut,
     stalled,
-    extended
+    extended,
+    quotaExhausted
   }));
 } catch (e) {
   console.log(JSON.stringify({ compacted: false, retryableApiError: false, failed: true, timedOut: false, stalled: false, extended: false, error: e.message }));
