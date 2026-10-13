@@ -48,17 +48,13 @@ fi
 
 # Run Structural Process Audit
 AUDIT_REPORT="$RUN_DIR/harness_audit.md"
-log_info "Running structural harness & dependency audit..."
 python3 "$ROOT/scripts/ralph-audit.py" "$RUN_DIR" >/dev/null 2>&1 || true
-if [[ -f "$AUDIT_REPORT" ]]; then
-  cat "$AUDIT_REPORT"
-  echo ""
+if [[ -f "$AUDIT_REPORT" ]] && grep -q 'Detected Anomalies' "$AUDIT_REPORT"; then
+  log_warn "[AUDIT] Anomalies detected in harness run. Report: $AUDIT_REPORT"
 fi
 
 REPORT="$RUN_DIR/analysis.md"
-log_info "Analyzing execution logs in $RUN_DIR..."
-node "$ROOT/scripts/ralph-analyze.mjs" "$RUN_DIR" | tee "$REPORT"
-echo ""
+node "$ROOT/scripts/ralph-analyze.mjs" "$RUN_DIR" > "$REPORT" 2>&1 || true
 
 # Update Durable Global Memory: LEARNINGS.md
 LEARNINGS_FILE="$ROOT/docs/runtime/LEARNINGS.md"
@@ -81,18 +77,17 @@ if [[ -f "$AUDIT_REPORT" ]] && grep -q 'Detected Anomalies' "$AUDIT_REPORT"; the
 fi
 
 if grep -q '_none_' "$REPORT" && ! grep -q 'Detected Anomalies' "${AUDIT_REPORT:-/dev/null}"; then
-  log_ok "No recurring tool errors or workflow anomalies detected. Harness is healthy."
+  log_ok "[RETRO] Harness is healthy (0 recurring tool errors)"
   exit 0
 fi
 
 if grep -q 'TIMEOUT_OR_COMPACTION_ONLY' "$REPORT" && ! grep -q 'Detected Anomalies' "${AUDIT_REPORT:-/dev/null}"; then
-  log_ok "Run chỉ bị gián đoạn do Timeout / Stall hoặc Stream quá dài."
-  log_info "Không có lỗi công cụ hay hạ tầng. TUYỆT ĐỐI KHÔNG kích hoạt AI Retro sửa đổi BOUNDARIES.md hay TECH_CONTEXT.md."
+  log_ok "[RETRO] Interrupted only by timeout/stall. Context intact."
   exit 0
 fi
 
 if [[ "${RALPH_RETRO_IMPROVE:-1}" != "1" ]]; then
-  log_info "Report saved to $REPORT. (Set RALPH_RETRO_IMPROVE=1 to run AI auto-improvement)."
+  log_info "[RETRO] Report saved: $REPORT. (Set RALPH_RETRO_IMPROVE=1 to auto-improve)"
   exit 0
 fi
 

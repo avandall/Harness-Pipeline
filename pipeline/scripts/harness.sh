@@ -269,7 +269,7 @@ cleanup_on_interrupt() {
 }
 
 trap cleanup_on_interrupt INT TERM
-trap '[[ -n "${RUN_DIR:-}" ]] && echo -e "\n${CYAN}[RALPH]${NC} Run logs archived in: ${RUN_DIR}\n💡 Run automated post-loop improvement: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
+trap '[[ -n "${RUN_DIR:-}" ]] && echo -e "\n${CYAN}[RALPH]${NC} Logs: ${RUN_DIR} | Retro: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
 
 log_info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
 log_ok()      { echo -e "${GREEN}[OK]${NC}    $*"; }
@@ -524,7 +524,7 @@ create_verified_step_checkpoint() {
       ckpt_commit=$(git stash create "ralph-verified-${tid}" 2>/dev/null || echo "")
       if [[ -n "$ckpt_commit" ]]; then
         git tag -f "$ckpt_tag" "$ckpt_commit" >/dev/null 2>&1 || true
-        log_ok "🛡️ [VERIFIED CHECKPOINT] Step verified PASS! Checkpoint updated at [${ckpt_tag}] (${ckpt_commit:0:7})"
+        log_ok "[CHECKPOINT] Verified PASS [${ckpt_tag}] (${ckpt_commit:0:7})"
       fi
     fi
   fi
@@ -778,15 +778,15 @@ sync_venv_dependencies() {
   project_root="$(cd "${PIPELINE_DIR}/.." && pwd)"
 
   if ! command -v uv >/dev/null 2>&1; then
-    log_warn "⚠️ [UV] 'uv' CLI not found. Skipping automated uv dependency sync."
+    [[ "$VERBOSE" == "true" ]] && log_warn "[UV] 'uv' CLI not found. Skipping dependency sync."
     return 0
   fi
 
   local venv_dir="${project_root}/.venv"
   if [[ ! -d "$venv_dir" ]]; then
-    log_info "⚡ [UV] Initializing virtual environment at ${venv_dir}..."
+    log_info "[UV] Initializing .venv..."
     uv venv "$venv_dir" >/dev/null 2>&1 || {
-      log_warn "Could not create .venv with uv."
+      log_warn "[UV] Could not create .venv"
       return 0
     }
   fi
@@ -797,48 +797,41 @@ sync_venv_dependencies() {
 
   local updated=false
   if [[ -f "${project_root}/pyproject.toml" ]]; then
-    log_info "⚡ [UV] Step 1: Synchronizing dependencies via 'uv sync' (pyproject.toml)..."
-    if (cd "${project_root}" && uv sync --quiet); then
+    if (cd "${project_root}" && uv sync --quiet 2>/dev/null); then
       updated=true
     fi
   fi
 
   if [[ -f "${project_root}/requirements.txt" ]]; then
-    log_info "⚡ [UV] Step 2: Checking and updating dependencies from requirements.txt..."
-    if uv pip install --python "$py_bin" -r "${project_root}/requirements.txt" --quiet; then
+    if uv pip install --python "$py_bin" -r "${project_root}/requirements.txt" --quiet 2>/dev/null; then
       updated=true
     fi
   fi
 
   if [[ -f "${project_root}/requirements-dev.txt" ]]; then
-    uv pip install --python "$py_bin" -r "${project_root}/requirements-dev.txt" --quiet || true
+    uv pip install --python "$py_bin" -r "${project_root}/requirements-dev.txt" --quiet 2>/dev/null || true
   fi
 
-  if [[ "$updated" == true ]]; then
-    log_ok "[UV] Virtual environment (.venv) synchronized with latest dependencies ✓"
+  if [[ "$updated" == true && "$VERBOSE" == "true" ]]; then
+    log_ok "[UV] Dependencies synced (.venv)"
   fi
 }
 
 preflight_check() {
-  log_section "PRE-FLIGHT CHECK"
   local errors=0
 
   # Check Bash version (Bash 4.1+ required for dynamic file descriptors {fd}>file)
   if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 1) )); then
-    log_error "Bash 4.1+ is required for Ralph Loop concurrency features (detected: ${BASH_VERSION})."
+    log_error "Bash 4.1+ required (detected: ${BASH_VERSION})."
     ((errors++))
-  else
-    log_ok "Bash version supported: ${BASH_VERSION}"
   fi
 
-  # Sync virtual environment & dependencies via uv
+  # Sync virtual environment & dependencies via uv quietly
   sync_venv_dependencies
 
   # Check directories
   for dir in "$DOCS_DIR" "$RUNTIME_DIR" "$CONTEXT_DIR" "$CORE_DIR"; do
-    if [[ -d "$dir" ]]; then
-      log_ok "Directory exists: $dir"
-    else
+    if [[ ! -d "$dir" ]]; then
       log_error "Missing directory: $dir"
       ((errors++))
     fi
@@ -846,67 +839,50 @@ preflight_check() {
 
   # Check required context files
   for file in "${CONTEXT_DIR}/PROJECT_BRIEF.md" "${CONTEXT_DIR}/Tasks_list.md" "${CONTEXT_DIR}/BOUNDARIES.md"; do
-    if [[ -f "$file" ]]; then
-      log_ok "Context file exists: $file"
-    else
+    if [[ ! -f "$file" ]]; then
       log_error "Missing context file: $file"
       ((errors++))
     fi
   done
 
-  # Check interview plan and human intent anchor files if present
-  if [[ -f "${CONTEXT_DIR}/INTERVIEW_PLAN.md" ]]; then
-    log_ok "Interview Plan exists: ${CONTEXT_DIR}/INTERVIEW_PLAN.md"
-  fi
-  if [[ -f "${CONTEXT_DIR}/Original_Tasks.md" ]]; then
-    log_ok "Human Intent Anchor exists: ${CONTEXT_DIR}/Original_Tasks.md"
-  fi
-
   # Check git repository
-  if git rev-parse --git-dir >/dev/null 2>&1; then
-    log_ok "Git repository initialized"
-  else
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
     log_error "Not a git repository. Run 'git init' first."
     ((errors++))
   fi
 
-  # Check verify.py
-  if [[ -f "${PIPELINE_DIR}/scripts/verify.py" ]]; then
-    log_ok "Verification engine ready: ${PIPELINE_DIR}/scripts/verify.py"
-  else
-    log_warn "Missing ${PIPELINE_DIR}/scripts/verify.py"
-  fi
-
   # Check agent runner
   local runner_check
-  runner_check="$("${PIPELINE_DIR}/scripts/agent-runner.sh" --check 2>&1)" || true
-  log_ok "Agent Provider: $runner_check"
+  runner_check="$("${PIPELINE_DIR}/scripts/agent-runner.sh" --check 2>&1)" || {
+    log_error "Agent runner check failed: $runner_check"
+    ((errors++))
+  }
 
-  # Check Plan Seal integrity and auto-restore from git if drifted
+  # Check Plan Seal integrity
   verify_or_restore_plan_seal "PRE-FLIGHT"
 
-  # Clean State Guard: Ensure working tree is clean before starting loop
+  # Clean State Guard
   ensure_clean_working_tree "" "$AUTO_CLEAN_DIRTY"
 
   if [[ $errors -gt 0 ]]; then
     log_error "Pre-flight failed with $errors error(s)."
     exit 2
   fi
-  log_ok "All pre-flight checks passed ✓ (Overnight Non-Blocking Mode Active)"
+  log_ok "[PREFLIGHT] Ready (Bash ${BASH_VERSION%%.*} | git | provider: ${runner_check})"
 }
 
 verify_or_restore_plan_seal() {
   local context_stage="${1:-LOOP}"
   if [[ -f "${PIPELINE_DIR}/scripts/plan.sh" ]]; then
     if ! "${PIPELINE_DIR}/scripts/plan.sh" check >/dev/null 2>&1; then
-      log_warn "⚠️ [PLAN SEAL] Specification drift detected (${context_stage})! Searching git history to restore original sealed context..."
-      if "${PIPELINE_DIR}/scripts/plan.sh" restore; then
-        log_ok "✅ [PLAN SEAL] Context specifications cleanly restored to sealed state from git history. Continuing execution..."
+      log_warn "⚠️ [PLAN SEAL] Drift detected (${context_stage})! Restoring from git..."
+      if "${PIPELINE_DIR}/scripts/plan.sh" restore >/dev/null 2>&1; then
+        log_ok "[PLAN SEAL] Restored context from git ✓"
       else
-        log_warn "⚠️ [PLAN SEAL] Could not restore context from git history. Continuing with current context."
+        log_warn "[PLAN SEAL] Could not restore context. Continuing with current."
       fi
     else
-      log_ok "Plan seal verified ✓ (No drift)"
+      [[ "$VERBOSE" == "true" ]] && log_ok "[PLAN SEAL] Valid (no drift)"
     fi
   fi
 }
@@ -1028,8 +1004,6 @@ check_and_auto_commit_done_task() {
       local latest_commit_msg
       latest_commit_msg=$(git log -1 --pretty=%B 2>/dev/null || echo "")
       if [[ "$latest_commit_msg" != *"[${done_task_id}]"* ]]; then
-        log_info "[${mode_label}] Detected changes for task [${done_task_id}]. Enforcing Hard OS Gate (Tier 2 Verification)..."
-
         local repo_root
         repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -1038,23 +1012,24 @@ check_and_auto_commit_done_task() {
         base_ref="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
         [[ -z "$base_ref" || "$base_ref" == "HEAD" ]] && base_ref="master"
         if ! PYTHONPATH="$repo_root:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_ref"; then
-          log_error "🚨 [HARD OS GATE] Tier 2 verification FAILED for task [${done_task_id}]! Refusing to commit broken changes to main."
+          log_error "[HARD-GATE] Tier 2 FAILED for [${done_task_id}]. Marked BLOCKED."
           safe_update_task_status "$done_task_id" "[!] BLOCKED"
           safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} failed Tier 2 verification gate before commit. Marked [!] BLOCKED."
           return 1
         fi
 
-        log_ok "[${mode_label}] Hard OS Gate passed 100% ✓. Auto-committing cleanly..."
         safe_update_task_status "$done_task_id" "[x] DONE"
         git add -A 2>/dev/null || true
         git reset pipeline/ .pipeline/ BLOCKERS/ .ralph* 2>/dev/null || true
         local commit_msg
         commit_msg=$(generate_commit_message "$done_task_id" "$mode_label")
-        git commit -m "$commit_msg" 2>&1 | tee -a "${RUNTIME_DIR}/session_live.log" || true
+        git commit -q -m "$commit_msg" 2>> "${RUNTIME_DIR}/session_live.log" || true
+        local new_sha
+        new_sha="$(git rev-parse --short HEAD 2>/dev/null || echo "")"
         # Clean up verified checkpoint tag upon successful task commit
         git tag -d "ralph-checkpoint-${done_task_id}" >/dev/null 2>&1 || true
-        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} cleanly verified (Tier 2 PASS) and committed to main."
-        log_ok "[${mode_label}] Working tree cleanly committed for ${done_task_id}."
+        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} cleanly verified (Tier 2 PASS) and committed (${new_sha})."
+        log_ok "[COMMIT] ${done_task_id} -> ${new_sha} (Tier 2 PASS)"
       fi
     fi
   fi
@@ -1073,7 +1048,6 @@ ensure_clean_working_tree() {
     # 2. If working tree is STILL dirty after checking for DONE tasks:
     if [[ -n "$(git status --porcelain --ignore-submodules=dirty 2>/dev/null)" ]]; then
       if [[ "$auto_clean" == "true" ]]; then
-        log_warn "🧹 [CLEAN STATE GUARD] Uncommitted dirty changes detected from an interrupted/aborted session!"
         local git_root
         git_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -1083,29 +1057,27 @@ ensure_clean_working_tree() {
         stash_hash=$(git stash create "$stash_name" 2>/dev/null || echo "")
         if [[ -n "$stash_hash" ]]; then
           git stash store -m "$stash_name" "$stash_hash" 2>/dev/null || true
-          log_info "🛡️ Interrupted changes archived safely in git stash (${stash_hash:0:7})"
         fi
 
         # Check if a VERIFIED CHECKPOINT exists for this task (only touch code/tests, preserving pipeline/)
         if [[ -n "$target_task" ]] && git rev-parse --verify "$ckpt_tag" >/dev/null 2>&1; then
-          log_info "🔄 [VERIFIED RESTORE] Restoring working tree to verified step checkpoint [${ckpt_tag}]..."
           (
             cd "$git_root"
             git restore . ':!pipeline' ':!.pipeline' 2>/dev/null || true
             git clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
             git checkout "$ckpt_tag" -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
           )
-          log_ok "Working tree cleanly restored to Verified Checkpoint (100% tests PASS, zero Frankenstein code) ✓"
+          log_info "[CLEAN-GUARD] Reset to checkpoint [${ckpt_tag}] (stash: ${stash_hash:0:7})"
         else
           (
             cd "$git_root"
             git restore . ':!pipeline' ':!.pipeline' 2>/dev/null || true
             git clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
           )
-          log_ok "Working tree reset cleanly to HEAD ✓ (Clean baseline restored for [${target_task:-next task}])"
+          log_info "[CLEAN-GUARD] Reset to HEAD (stash: ${stash_hash:0:7})"
         fi
       else
-        log_warn "⚠️ [DIRTY WORKING TREE] Uncommitted changes detected. --no-auto-clean is active; continuing with dirty tree."
+        log_warn "[DIRTY-TREE] Uncommitted changes detected (--no-auto-clean active)"
       fi
     fi
   fi
@@ -1129,7 +1101,7 @@ _run_agent_turn() {
     runner_args+=("--effort" "$effort_override")
   fi
 
-  log_info "⚡ [${role_name}] AI is running (Iter ${iter})..."
+  log_info "[${role_name}] AI running (Iter ${iter})..."
   set +e
   "${PIPELINE_DIR}/scripts/agent-runner.sh" "${runner_args[@]}" <<< "$prompt"
   local exit_code=$?
@@ -1141,20 +1113,20 @@ _run_agent_turn() {
   retryable=$(node -e 'const s=JSON.parse(process.argv[1]);process.stdout.write(s.retryableApiError?"1":"0")' "$log_summary" 2>/dev/null || echo 0)
 
   if [[ "$compacted" == "1" ]]; then
-    log_warn "🛑 [CONTEXT COMPACTION] Task auto-compacted mid-run! Quality degraded."
+    log_warn "🛑 [COMPACTION] Auto-compacted mid-run! Task too large."
     return 7
   fi
 
   local stalled
   stalled=$(node -e 'const s=JSON.parse(process.argv[1]);process.stdout.write(s.stalled?"1":"0")' "$log_summary" 2>/dev/null || echo 0)
   if [[ "$stalled" == "1" ]]; then
-    log_warn "⏰ [STALL WATCHDOG] Task timed out or stalled."
+    log_warn "⏰ [WATCHDOG] Stalled or timed out."
     return 124
   fi
 
   if [[ $exit_code -ne 0 ]]; then
     if [[ "$retryable" == "1" ]]; then
-      log_warn "⚠️ [API ERROR] Transient API / network error detected."
+      log_warn "⚠️ [API] Transient error (retryable)."
       return 8
     fi
     return "$exit_code"
@@ -1249,19 +1221,18 @@ execute_worker_for_task() {
   local agent_exit=$?
 
   if [[ $agent_exit -ne 0 ]]; then
-    log_error "🚨 [Worker $task] Agent execution failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
+    log_error "[Worker $task] Agent failed (exit: $agent_exit). Marked BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
     return 1
   fi
 
   # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree with diff awareness)
-  log_info "[Worker $task] Running Tier 1 local verification..."
   local base_branch_for_diff
   base_branch_for_diff="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
   [[ -z "$base_branch_for_diff" || "$base_branch_for_diff" == "HEAD" ]] && base_branch_for_diff="master"
   if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff"); then
-    log_error "🚨 [Worker $task] Local Tier 1 verification failed! Task marked [!] BLOCKED."
+    log_error "[Worker $task] Tier 1 FAILED. Marked BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
     return 1
   fi
@@ -1279,13 +1250,13 @@ execute_worker_for_task() {
   local merge_fd
   {
     if [[ -z "${merge_fd:-}" ]]; then
-      log_error "[BORS-QUEUE] Failed to allocate dynamic file descriptor for merge lock!"
+      log_error "[BORS] Failed to allocate dynamic file descriptor for merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
       exit 1
     fi
 
     wait_and_acquire_merge_lock "$merge_fd" || {
-      log_error "[BORS-QUEUE] Worker $task failed to acquire merge lock!"
+      log_error "[BORS] Worker $task failed to acquire merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
       exit 1
     }
@@ -1294,13 +1265,13 @@ execute_worker_for_task() {
     base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
     [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
-    log_info "[BORS-QUEUE] Worker $task entering Bors Staging Gate for integration into ${base_branch}..."
+    log_info "[BORS] Staging [${task}] -> ${base_branch}..."
 
     # Assert repo_root is on base branch before doing any merge
     local current_branch
     current_branch=$(git -C "$repo_root" symbolic-ref --short HEAD 2>/dev/null || git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     if [[ "$current_branch" != "$base_branch" ]]; then
-      log_error "[BORS-QUEUE] Fatal: repo_root is on branch '$current_branch', expected '$base_branch'! Aborting integration for $task."
+      log_error "[BORS] Fatal: repo_root on '$current_branch', expected '$base_branch'! Aborting for $task."
       safe_update_task_status "$task" "[!] BLOCKED"
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
@@ -1308,7 +1279,7 @@ execute_worker_for_task() {
 
     # 4. Bors Step 1: Rebase worker branch on top of latest base branch (with Self-Healing)
     if ! git -C "$worktree_dir" rebase "$base_branch" >/dev/null 2>&1; then
-      log_warn "[BORS-QUEUE] Worker $task rebase conflict with latest ${base_branch}. Attempting intelligent self-healing..."
+      log_warn "[BORS] Conflict on rebase for ${task}. Self-healing..."
       local conflicted_files
       conflicted_files=$(git -C "$worktree_dir" diff --name-only --diff-filter=U 2>/dev/null || echo "")
       local can_heal=true
@@ -1324,27 +1295,25 @@ execute_worker_for_task() {
       fi
 
       if [[ "$can_heal" == "true" ]]; then
-        log_info "[BORS-QUEUE] Self-healing trivial manifest/init conflicts for $task..."
         git -C "$worktree_dir" checkout --theirs $conflicted_files >/dev/null 2>&1 || true
         git -C "$worktree_dir" add $conflicted_files >/dev/null 2>&1 || true
         GIT_EDITOR=true git -C "$worktree_dir" rebase --continue >/dev/null 2>&1 || true
       fi
 
       if git -C "$worktree_dir" status 2>/dev/null | grep -q "rebase in progress"; then
-        log_warn "[BORS-QUEUE] Worker $task rebase conflict could not be automatically healed. Aborting rebase."
+        log_warn "[BORS] Worker $task conflict unhealable. Aborting rebase."
         git -C "$worktree_dir" rebase --abort 2>/dev/null || true
         safe_update_task_status "$task" "[!] BLOCKED"
         flock -u "$merge_fd" 2>/dev/null || true
         exit 1
       else
-        log_ok "[BORS-QUEUE] Worker $task rebase conflict successfully self-healed! ✓"
+        log_ok "[BORS] Worker $task conflict self-healed ✓"
       fi
     fi
 
     # 5. Bors Step 2: Run Tier 2 Verification ON THE REBASED WORKTREE (Diff against base branch)
-    log_info "[BORS-QUEUE] Running Tier 2 verification in staging worktree before touching ${base_branch}..."
     if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_branch"); then
-      log_error "🚨 [BORS GATE FAILED] Worker $task failed Tier 2 verification after rebase! Base branch untouched."
+      log_error "[BORS] Worker $task failed Tier 2 verification after rebase!"
       safe_update_task_status "$task" "[!] BLOCKED"
       safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 verification during Bors staging. Rejected cleanly."
       flock -u "$merge_fd" 2>/dev/null || true
@@ -1352,9 +1321,8 @@ execute_worker_for_task() {
     fi
 
     # 6. Bors Step 3: Atomic integration into base branch (Guaranteed Green & Clean)
-    log_ok "✅ [BORS GATE PASSED] Worker $task verified 100% Green against ${base_branch}. Fast integrating..."
     if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
-      log_error "[BORS-QUEUE] Unexpected merge failure for $task into ${base_branch}."
+      log_error "[BORS] Merge failure for $task into ${base_branch}."
       git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
       git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
       git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
@@ -1376,7 +1344,7 @@ execute_worker_for_task() {
 
     if ! git -C "$repo_root" commit -m "$main_commit_msg" >/dev/null 2>&1; then
       if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
-        log_error "[BORS-QUEUE] git commit failed on ${base_branch} for $task despite staged changes!"
+        log_error "[BORS] git commit failed on ${base_branch} for $task despite staged changes!"
         git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
         git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
         git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
@@ -1389,7 +1357,7 @@ execute_worker_for_task() {
 
     safe_update_task_status "$task" "[x] DONE"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} via Bors Queue (Tier 2 PASS)."
-    log_ok "🎉 [BORS INTEGRATED] Task $task merged and verified on ${base_branch} ✓"
+    log_ok "[BORS] Integrated [${task}] -> ${base_branch} (Tier 2 PASS)"
 
     flock -u "$merge_fd" 2>/dev/null || true
   } {merge_fd}>"${PIPELINE_DIR}/.ralph/locks/merge_queue.lock"
@@ -1464,33 +1432,28 @@ run_parallel_waves() {
       running_tasks+="${task},"
       active_count=$(( active_count + 1 ))
 
-      log_ok "🚀 [POOL SLOT ${active_count}/${max_workers}] Launched Worker for [${task}] (PID: ${wpid})"
+      log_info "[POOL] Launched [${task}] (${active_count}/${max_workers})"
     done
 
     # 3. If no active workers remain and no more tasks can be scheduled, break!
     if (( ${#POOL_PID_TO_TASK[@]} == 0 )); then
-      log_ok "🎉 [POOL] All available tasks have been processed!"
+      log_ok "🎉 [POOL] All available tasks processed!"
       break
     fi
 
-    # 4. Live Terminal Heartbeat (every 10s)
+    # 4. Live Terminal Heartbeat (every 30s)
     local now
     now=$(date +%s)
-    if (( now - last_heartbeat >= 10 )); then
+    if (( now - last_heartbeat >= 30 )); then
       last_heartbeat=$now
-      log_info "⚡ [POOL HEARTBEAT] ${#POOL_PID_TO_TASK[@]}/${max_workers} Workers Active:"
+      local hb_summary=""
       for p in "${!POOL_PID_TO_TASK[@]}"; do
         local t="${POOL_PID_TO_TASK[$p]}"
         local st="${POOL_PID_START[$p]}"
         local elapsed=$(( now - st ))
-        local hb_file="${RUN_DIR}/iter-1-WORKER-${t}.log.heartbeat"
-        local status_str="Running"
-        if [[ -f "$hb_file" ]]; then
-          status_str=$(cat "$hb_file" 2>/dev/null | tr -d '\r\n' || echo "Running")
-        fi
-        local child_cnt=$(pgrep -P "$p" 2>/dev/null | wc -l || echo 0)
-        echo -e "   ${CYAN}• [${t}]${NC} PID: ${p} | Elapsed: ${elapsed}s | Subprocesses: ${child_cnt} | ${status_str}"
+        hb_summary+="${t}(${elapsed}s) "
       done
+      log_info "[POOL] Active (${#POOL_PID_TO_TASK[@]}/${max_workers}): ${hb_summary}"
     fi
 
     # 5. Wait for ANY single worker to finish (using wait -n)
@@ -1517,10 +1480,10 @@ run_parallel_waves() {
       local f_br="${POOL_PID_TO_BR[$finished_pid]}"
 
       if [[ $worker_exit -ne 0 ]]; then
-        log_warn "⚠️ [POOL] Worker for [${f_task}] finished with exit code ${worker_exit} (Failed/Blocked)."
+        log_warn "[POOL] [${f_task}] Failed (exit: ${worker_exit})"
         pool_failed_tasks=$(( pool_failed_tasks + 1 ))
       else
-        log_ok "✅ [POOL] Worker for [${f_task}] completed successfully! Slot freed."
+        log_ok "[POOL] [${f_task}] Completed (PASS)"
         pool_done_tasks=$(( pool_done_tasks + 1 ))
       fi
 
@@ -1549,14 +1512,14 @@ run_parallel_waves() {
     log_error "🚨 [INTEGRATION REGRESSION] Tier 2 full verification failed across integrated tasks!"
     return 1
   fi
-  log_ok "Final repository integration verified PASS 100% ✓"
+  log_ok "[INTEGRATION] Repository verified PASS 100% ✓"
 
   rm -f "$reg_file" 2>/dev/null || true
   ACTIVE_WORKTREES=()
   ACTIVE_BRANCHES=()
   GLOBAL_WORKER_PIDS=()
 
-  log_ok "Dynamic Parallel Worker Pool finished: ${pool_done_tasks} task(s) done, ${pool_failed_tasks} task(s) failed/blocked."
+  log_ok "[POOL] Finished: ${pool_done_tasks} done, ${pool_failed_tasks} blocked"
   return 0
 }
 
@@ -1568,8 +1531,7 @@ run_fix_bug_flow() {
   local repo_root
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-  log_section "AGENTLESS BUG FIX MODE"
-  log_info "Analyzing input error / traceback..."
+  log_section "BUG FIX MODE"
 
   local culprit_file=""
   if [[ -f "$error_input" ]]; then
@@ -1588,11 +1550,8 @@ else:
     print(file_match.group(1) if file_match else "")
 ' 2>/dev/null || echo "")
 
-  if [[ -z "$culprit_file" ]]; then
-    log_warn "Could not automatically localize culprit file from error input."
-    log_info "Prompting Agent for general bug reproduction & fix..."
-  else
-    log_info "🎯 Localized culprit file: ${culprit_file}"
+  if [[ -n "$culprit_file" ]]; then
+    log_info "[BUGFIX] Culprit: ${culprit_file}"
   fi
 
   # Reproduce: Build isolated test reproducing the bug
@@ -1613,11 +1572,10 @@ Phát hiện lỗi cần sửa chữa triệt để (Chi tiết lỗi lưu tại
 4. Đảm bảo chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target ${test_file}' PASS 100%.
 5. Đảm bảo chạy full 'python3 pipeline/scripts/verify.py --tier 2' PASS 100% không gây regression."
 
-  log_info "Running Agent Turn for targeted bug fix..."
+  log_info "[BUGFIX] Invoking agent for fix..."
   _run_agent_turn "$bug_prompt" "$PRINT_TIMEOUT" "1" "$EXECUTOR_MODEL" "BUGFIX-AGENT"
 
   # Verify
-  log_info "Verifying bug fix via deterministic Tier 1 and Tier 2..."
   local tier1_ok=false
   local tier2_ok=false
 
@@ -1646,10 +1604,10 @@ Phát hiện lỗi cần sửa chữa triệt để (Chi tiết lỗi lưu tại
     git -C "$repo_root" add -A
     git -C "$repo_root" commit -m "fix(agentless): resolve issue: ${bug_summary}"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Agentless bug fix succeeded and cleanly committed to main."
-    log_ok "🎉 [BUGFIX] Bug fix verified and committed cleanly ✓"
+    log_ok "[BUGFIX] Verified & committed cleanly ✓"
     return 0
   else
-    log_error "🚨 [BUGFIX FAILED] Bug fix did not pass Tier 2 verification. Reverting uncommitted changes..."
+    log_error "[BUGFIX] Tier 2 failed -> Changes reverted"
     # Clean both modified and untracked files (Issue #10)
     git -C "$repo_root" checkout -- . 2>/dev/null || true
     git -C "$repo_root" clean -fd 2>/dev/null || true
@@ -1687,7 +1645,7 @@ main() {
   local api_errors=0
   local CURRENT_ACTIVE_TASK=""
 
-  log_section "STARTING RALPH LOOP ORCHESTRATION"
+  log_section "RALPH LOOP ORCHESTRATOR"
 
   while :; do
     iter=$((iter + 1))
@@ -1722,22 +1680,18 @@ main() {
     active_task=$(get_next_todo_task "$TASK_FILTER")
 
     if [[ -z "$active_task" ]]; then
-      log_ok "🎉 ALL TASKS PROCESSED & VERIFIED 100% PASS! [Queue Complete]"
+      log_ok "🎉 [COMPLETE] All tasks processed & verified 100% PASS!"
       exit 0
     fi
 
     # Session Memory Management (Task-Bound Continuous Sessions)
     if [[ "$active_task" != "$CURRENT_ACTIVE_TASK" ]]; then
-      if [[ -n "$CURRENT_ACTIVE_TASK" ]]; then
-        log_info "🔄 [SESSION FLUSH] Task switched from [${CURRENT_ACTIVE_TASK}] to [${active_task}]. Flushed memory for clean prompt caching."
-      else
-        log_info "⚡ [TASK SESSION] Initiating Task-Bound Session for [${active_task}]..."
-      fi
+      log_info "[TASK] Switched target to [${active_task}]"
       CURRENT_ACTIVE_TASK="$active_task"
       ensure_clean_working_tree "$active_task" "$AUTO_CLEAN_DIRTY"
     fi
 
-    log_section "ITERATION ${iter} / ${MAX_ITERATIONS} — TARGET: [${active_task}]"
+    log_section "ITER ${iter}/${MAX_ITERATIONS} | TARGET: ${active_task}"
 
     # Ensure plan seal integrity before executing agent turn
     verify_or_restore_plan_seal "ITERATION ${iter}"
@@ -1762,7 +1716,7 @@ main() {
     local complexity_notice=""
 
     if (( svc_count > 3 || file_count > 5 )); then
-      log_warn "⚠️ [COMPLEXITY GUARD] Task [${active_task}] is high-complexity: spans ${svc_count} microservices and ${file_count} files (>3 services or >5 files)!"
+      log_warn "[COMPLEXITY] ${active_task}: ${svc_count} services, ${file_count} files (>3 svcs or >5 files)"
       complexity_notice="Task này có phạm vi lớn (${svc_count} microservices, ${file_count} files). Để không bị timeout:
 - BẮT BUỘC tạo PLAN.md chia thành 2-4 atomic micro-steps độc lập (mỗi step chỉ sửa 1-2 services hoặc 2-3 files).
 - Chạy 'python3 pipeline/scripts/verify.py' ngay sau mỗi step để kích hoạt Verified Step Checkpoint.
@@ -1803,7 +1757,7 @@ main() {
 
     # Auto-sync dependencies if agent added new packages to manifest
     if git status --porcelain "${PIPELINE_DIR}/../pyproject.toml" "${PIPELINE_DIR}/../requirements.txt" 2>/dev/null | grep -qE "pyproject\.toml|requirements"; then
-      log_info "📦 Manifest modification detected. Synchronizing new dependencies via uv into .venv..."
+      log_info "[UV] Manifest modified -> Syncing .venv..."
       sync_venv_dependencies
     fi
 
@@ -1816,10 +1770,9 @@ main() {
     if [[ "$head_after" != "$head_before" ]]; then
       no_progress=0
       api_errors=0
-      log_ok "Progress verified: New clean commit ${head_after:0:9}"
     else
       no_progress=$((no_progress + 1))
-      log_info "No new commit this iteration (No-progress count: ${no_progress}/${NO_PROGRESS_MAX})"
+      log_warn "[NO-COMMIT] Iter ${iter} (+0) | Strike: ${no_progress}/${NO_PROGRESS_MAX}"
     fi
   done
 }

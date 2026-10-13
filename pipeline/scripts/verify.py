@@ -542,8 +542,6 @@ def main():
     report_path = docs_runtime / "VERIFICATION_REPORT.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"🔍 Running Tier {effective_tier} Verification Checks (Preset: {preset})...")
-
     report_lines = [
         f"# TIER {effective_tier} VERIFICATION REPORT",
         f"Generated: {now}",
@@ -570,17 +568,13 @@ def main():
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_content)
 
-    print(
-        f"\n📝 Verification report written to: {report_path} (Status: {'PASS' if all_passed else 'FAIL'})"
-    )
-
     if not all_passed:
-        print(
-            f"❌ Tier {effective_tier} Verification Failed! See VERIFICATION_REPORT.md for details."
-        )
+        failed_names = [name for name, passed, _ in check_results if not passed]
+        print(f"[VERIFY] Tier {effective_tier} FAIL [{preset}]: {', '.join(failed_names)}")
+        print(f"  Report: {report_path}")
         sys.exit(1)
     else:
-        print(f"✅ Tier {effective_tier} Verification Passed 100%!")
+        print(f"[VERIFY] Tier {effective_tier} PASS [{preset}]")
         sys.exit(0)
 
 

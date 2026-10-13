@@ -157,8 +157,6 @@ diff_and_log_context() {
 EOF
   fi
 
-  log_section "CHANGELOG & DIFF INSPECTION (TURN ${turn_num})"
-
   # 1. Check all files currently in CONTEXT_DIR
   for f in "${CONTEXT_DIR}"/*.md; do
     [[ -f "$f" ]] || continue
@@ -169,7 +167,7 @@ EOF
       has_changes=true
       local lines_added
       lines_added=$(wc -l < "$f" 2>/dev/null || echo 0)
-      log_info "➕ [NEW FILE] ${fname} (+${lines_added} lines)"
+      log_info "[DIFF] Created: ${fname} (+${lines_added}L)"
       local file_diff
       file_diff="$(diff -u /dev/null "$f" 2>/dev/null || true)"
       diff_content+="${file_diff}"$'\n'
@@ -183,7 +181,7 @@ EOF
       added=$(echo "$file_diff" | grep -c '^+' | grep -v '^+++' || echo 0)
       local removed
       removed=$(echo "$file_diff" | grep -c '^-' | grep -v '^---' || echo 0)
-      log_info "📝 [MODIFIED] ${fname} (+${added} / -${removed} lines)"
+      log_info "[DIFF] Modified: ${fname} (+${added}/-${removed}L)"
       diff_content+="${file_diff}"$'\n'
       turn_diff_md+=$'\n'"#### 📝 Modified: \`${fname}\` (+${added} / -${removed} lines)"$'\n'
       turn_diff_md+=$'```diff\n'"${file_diff}"$'\n```\n'
@@ -196,7 +194,7 @@ EOF
     local fname="$(basename "$f")"
     if [[ ! -f "${CONTEXT_DIR}/${fname}" ]]; then
       has_changes=true
-      log_warn "🗑️ [DELETED] ${fname}"
+      log_warn "[DIFF] Deleted: ${fname}"
       local file_diff
       file_diff="$(diff -u "$f" /dev/null 2>/dev/null || true)"
       diff_content+="${file_diff}"$'\n'
@@ -225,10 +223,6 @@ EOF
 ${turn_diff_md}
 ---
 EOF
-
-    log_ok "Changes recorded to: ${PLAN_DIFF_LOG}"
-  else
-    log_info "No context file modifications detected in Turn ${turn_num}."
   fi
 }
 
@@ -288,18 +282,11 @@ main() {
   RUN_DIR="${PIPELINE_DIR}/.ralph/runs/plan-refine-${RUN_ID}"
   mkdir -p "$RUN_DIR"
 
-  log_section "DUAL-MODEL PLAN REFINEMENT & INTERVIEW LOOP"
-  log_info "Max Turns: ${MAX_TURNS} | Per-Turn Timeout: ${TIMEOUT}"
-  log_info "Critic Model:  ${CRITIC_MODEL:-default provider model}"
-  log_info "Planner Model: ${PLANNER_MODEL:-default provider model}"
+  log_section "PLAN REFINEMENT LOOP (${MAX_TURNS} turns max)"
+  log_info "[MODELS] Critic: ${CRITIC_MODEL:-default} | Planner: ${PLANNER_MODEL:-default}"
+
   local interview_plan_path="${CONTEXT_DIR}/INTERVIEW_PLAN.md"
   local original_tasks_path="${CONTEXT_DIR}/Original_Tasks.md"
-  log_info "User Interview Plan (Read First): ${interview_plan_path}"
-  if [[ -f "$original_tasks_path" ]]; then
-    log_info "Human Intent Anchor: ${original_tasks_path}"
-  fi
-  log_info "Debate History: ${DEBATE_LOG}"
-  log_info "Changelog Diff: ${PLAN_DIFF_LOG}"
 
   # Capture initial context state before Turn 1
   INITIAL_SNAPSHOT="${RUN_DIR}/snapshot-initial"
@@ -324,7 +311,7 @@ EOF
 
   while (( turn < MAX_TURNS )); do
     turn=$((turn + 1))
-    log_section "TURN ${turn} / ${MAX_TURNS} — CRITIC REVIEW (PHASE 1: USER PLAN ➔ PHASE 2: TECH SPECS)"
+    log_section "TURN ${turn}/${MAX_TURNS} | CRITIC REVIEW"
 
     # 1. Step 1: CRITIC Turn
     local critic_template
@@ -341,14 +328,14 @@ EOF
     # Check if Critic approved
     if is_approved "$DEBATE_LOG" || is_approved "${RUN_DIR}/turn-${turn}-CRITIC.log"; then
       approved=true
-      log_ok "🎉 [PLAN-REFINE] Plan has been 100% APPROVED by Lead Architect at Turn ${turn}!"
+      log_ok "🎉 [PLAN-REFINE] Approved at Turn ${turn}!"
       break
     fi
 
-    log_warn "Critic identified concerns or requested clarification. Proceeding to Planner response..."
+    log_warn "[CRITIC] Changes requested -> Passing to Planner"
 
     # 2. Step 2: PLANNER Turn
-    log_section "TURN ${turn} / ${MAX_TURNS} — PLANNER REFINEMENT (INTERVIEW_PLAN.md & Tasks_list.md)"
+    log_section "TURN ${turn}/${MAX_TURNS} | PLANNER UPDATE"
 
     # Snapshot context before Planner modifications
     local turn_before_dir="${RUN_DIR}/snapshot-before-turn-${turn}"
@@ -364,7 +351,6 @@ EOF
     planner_prompt="${planner_prompt//\{\{ORIGINAL_TASKS_PATH\}\}/${original_tasks_path}}"
 
     run_turn "$planner_prompt" "$PLANNER_MODEL" "PLANNER" "$turn" || true
-    log_ok "Planner completed filesystem updates for Turn ${turn}."
 
     # Inspect, diff, and log all changes made by Planner in this turn
     diff_and_log_context "${turn_before_dir}" "${turn}"

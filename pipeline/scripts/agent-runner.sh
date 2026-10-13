@@ -284,7 +284,7 @@ while true; do
   # 1. Stall Activity Watchdog: Abort ONLY if truly zero activity across all dimensions for STALL_TIMEOUT
   if (( IDLE_SECONDS >= STALL_TIMEOUT )); then
     cleanup_subprocesses "$AGENT_PID"
-    MSG="[STALL WATCHDOG] Tiến trình AI và toàn bộ subprocess không có hoạt động (0 CPU ticks, 0 file changes, 0 output) trong ${IDLE_SECONDS}s (ngưỡng: ${STALL_TIMEOUT}s). Tự động ngắt sớm để bảo vệ tài nguyên."
+    MSG="[WATCHDOG] Stalled for ${IDLE_SECONDS}s (limit: ${STALL_TIMEOUT}s). Terminating."
     echo "" >> "$OUTPUT_FILE"
     echo "⚠️ $MSG" | tee -a "$OUTPUT_FILE" >&2
     EXIT_CODE=124
@@ -296,13 +296,13 @@ while true; do
     # If AI has been actively progressing within the last 90s, extend budget
     if (( IDLE_SECONDS <= 90 && (CURRENT_BUDGET + EXTENSION_STEP) <= MAX_TIMEOUT )); then
       CURRENT_BUDGET=$(( CURRENT_BUDGET + EXTENSION_STEP ))
-      MSG="[DYNAMIC BUDGETING] AI đang tích cực thực thi (hoạt động cách đây ${IDLE_SECONDS}s). Tự động gia hạn thêm +${EXTENSION_STEP}s (Thời hạn mới: ${CURRENT_BUDGET}s / Trần tối đa: ${MAX_TIMEOUT}s)."
+      MSG="[BUDGET] Active (+${EXTENSION_STEP}s -> ${CURRENT_BUDGET}s / max ${MAX_TIMEOUT}s)"
       echo "" >> "$OUTPUT_FILE"
       echo "⏳ $MSG" | tee -a "$OUTPUT_FILE" >&2
     else
       # Reached hard ceiling or stalled near deadline
       cleanup_subprocesses "$AGENT_PID"
-      MSG="[TIMEOUT] Lượt chạy đã vượt quá giới hạn thời gian cho phép (${CURRENT_BUDGET}s). Kết thúc phiên làm việc."
+      MSG="[TIMEOUT] Exceeded ${CURRENT_BUDGET}s budget. Terminating."
       echo "" >> "$OUTPUT_FILE"
       echo "⏰ $MSG" | tee -a "$OUTPUT_FILE" >&2
       EXIT_CODE=124

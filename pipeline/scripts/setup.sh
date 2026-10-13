@@ -45,11 +45,10 @@ if [[ "${TARGET_DIR}" == */pipeline ]]; then
   TARGET_DIR="$(dirname "${TARGET_DIR}")"
 fi
 
-echo "🚀 Installing / Updating Enterprise Agent Pipeline into: [${TARGET_DIR}]..."
+echo "🚀 [SETUP] Installing / Updating pipeline -> [${TARGET_DIR}]..."
 
 # 1. Copy / Update pipeline directory
 if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
-  echo "📦 Updating pipeline infrastructure (scripts, core protocols, presets, engine, prompts)..."
   mkdir -p "${TARGET_DIR}/pipeline"
 
   # Core infrastructure directories
@@ -77,15 +76,12 @@ if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
   mkdir -p "${TARGET_DIR}/pipeline/docs/context"
   if [[ -d "${PIPELINE_DIR}/docs/context" ]]; then
     if [[ "$OVERRIDE_ALL" == true ]]; then
-      echo "⚠️ --override-all specified: Overwriting entire project context with fresh templates."
+      echo "⚠️ [SETUP] Overwriting project context with fresh templates (--override-all)"
       cp -rf "${PIPELINE_DIR}/docs/context"/* "${TARGET_DIR}/pipeline/docs/context/" 2>/dev/null || true
     else
-      echo "🛡️ Checking project context files (preserving existing, skipping replace)..."
       for f in "${PIPELINE_DIR}/docs/context"/*.md; do
         if [[ -f "$f" ]]; then
           base_name="$(basename "$f")"
-          
-          # Check all candidate locations where user might have existing context
           existing_path=""
           for candidate in \
             "${TARGET_DIR}/pipeline/docs/context/${base_name}" \
@@ -99,22 +95,15 @@ if [[ "${PIPELINE_DIR}" != "${TARGET_DIR}/pipeline" ]]; then
           done
 
           if [[ -n "$existing_path" ]]; then
-            # File already exists: do NOT replace!
-            # If it was in an alternate path, ensure it is available in pipeline/docs/context
             if [[ "$existing_path" != "${TARGET_DIR}/pipeline/docs/context/${base_name}" ]]; then
               cp -f "$existing_path" "${TARGET_DIR}/pipeline/docs/context/${base_name}" 2>/dev/null || true
-              echo "   - 🔄 [SYNC] Preserved user file from $(basename "$(dirname "$existing_path")")/${base_name} (not replaced)"
-            else
-              echo "   - ⏭️ [SKIP] Already exists: ${base_name} (skipped, not replaced)"
             fi
           else
-            # File does not exist yet: initialize from template
             cp -f "$f" "${TARGET_DIR}/pipeline/docs/context/${base_name}" 2>/dev/null || true
-            echo "   - ➕ [NEW] Initialized template: ${base_name}"
           fi
         fi
       done
-      echo "✅ Context files processed cleanly (0 existing files replaced)."
+      echo "🛡️ [SETUP] Context preserved (0 user files replaced)"
     fi
   fi
 
@@ -248,7 +237,6 @@ fi
 
 # 8. Ensure virtual environment & sync dependencies via uv
 if command -v uv >/dev/null 2>&1; then
-  echo "⚡ [UV] Ensuring virtual environment and syncing dependencies via uv..."
   if [[ ! -d "${TARGET_DIR}/.venv" ]]; then
     uv venv "${TARGET_DIR}/.venv" 2>/dev/null || true
   fi
@@ -274,12 +262,9 @@ if command -v uv >/dev/null 2>&1; then
   if [[ -f "${TARGET_DIR}/requirements.txt" ]]; then
     uv pip install "${UV_INSTALL_ARGS[@]}" -r "${TARGET_DIR}/requirements.txt" 2>/dev/null || true
   fi
-  echo "✅ [UV] Virtualenv and dependencies checked in: ${TARGET_DIR}/.venv"
 else
-  echo "⚠️ [UV] 'uv' CLI not found. Install uv (https://astral.sh/uv) for instant dependency management."
+  echo "⚠️ [UV] 'uv' CLI not found. Install uv for dependency management."
 fi
 
-echo ""
-echo "✅ Pipeline successfully installed / updated into [${TARGET_DIR}]!"
-echo "💡 To test harness offline (0 token): ${TARGET_DIR}/pipeline/scripts/selftest.sh"
-echo "💡 To run autonomous loop: ${TARGET_DIR}/harness.sh"
+echo "✅ [SETUP] Complete -> ${TARGET_DIR} (.venv synced)"
+echo "💡 Run harness: ${TARGET_DIR}/pipeline/scripts/harness.sh"

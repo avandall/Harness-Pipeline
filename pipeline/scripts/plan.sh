@@ -81,11 +81,11 @@ restore_context() {
   local current_hash
   current_hash="$(compute_seal)"
   if [[ "$current_hash" == "$expected_hash" ]]; then
-    echo "✅ [PLAN] Current context already matches plan seal."
+    echo "✅ [PLAN] Context matches seal"
     return 0
   fi
 
-  echo "🔍 [PLAN] Searching git history for context matching seal ${expected_hash:0:16}..."
+  echo "🔍 [PLAN] Searching git history (seal: ${expected_hash:0:8})..."
 
   local git_root
   git_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$ROOT")"
@@ -101,9 +101,8 @@ restore_context() {
   local head_hash
   head_hash="$(compute_seal_from_git "HEAD" "$rel_context")"
   if [[ "$head_hash" == "$expected_hash" ]]; then
-    echo "🔄 [PLAN] Matching seal found at git HEAD. Reverting uncommitted modifications..."
     git checkout HEAD -- "$CONTEXT_DIR" 2>/dev/null || git checkout HEAD -- "$rel_context"
-    echo "✅ [PLAN] Context specifications cleanly restored from git HEAD."
+    echo "✅ [PLAN] Restored from git HEAD"
     return 0
   fi
 
@@ -115,9 +114,8 @@ restore_context() {
       local hint_hash
       hint_hash="$(compute_seal_from_git "$hint_commit" "$rel_context")"
       if [[ "$hint_hash" == "$expected_hash" ]]; then
-        echo "🔄 [PLAN] Found matching seal at hint commit ${hint_commit:0:9}. Restoring..."
         git checkout "$hint_commit" -- "$CONTEXT_DIR" 2>/dev/null || git checkout "$hint_commit" -- "$rel_context"
-        echo "✅ [PLAN] Context specifications cleanly restored from git commit ${hint_commit:0:9}."
+        echo "✅ [PLAN] Restored from commit ${hint_commit:0:8}"
         return 0
       fi
     fi
@@ -133,14 +131,13 @@ restore_context() {
     local c_hash
     c_hash="$(compute_seal_from_git "$commit" "$rel_context")"
     if [[ "$c_hash" == "$expected_hash" ]]; then
-      echo "🔄 [PLAN] Found matching seal at git commit ${commit:0:9}. Restoring..."
       git checkout "$commit" -- "$CONTEXT_DIR" 2>/dev/null || git checkout "$commit" -- "$rel_context"
-      echo "✅ [PLAN] Context specifications cleanly restored from git commit ${commit:0:9}."
+      echo "✅ [PLAN] Restored from commit ${commit:0:8}"
       return 0
     fi
   done
 
-  echo "❌ [PLAN] Could not find any commit in git history matching seal ${expected_hash:0:16}..."
+  echo "❌ [PLAN] No commit found matching seal ${expected_hash:0:8}"
   return 1
 }
 
@@ -182,11 +179,11 @@ validate_tasks_spec() {
   fi
 
   if [[ $errors -gt 0 ]]; then
-    echo "❌ [PLAN-CHECK] Tasks_list.md validation failed with $errors error(s)."
+    echo "❌ [PLAN-CHECK] Failed ($errors errors)"
     return 1
   fi
 
-  echo "✅ [PLAN-CHECK] Tasks_list.md validation passed ($task_count tasks verified) ✓"
+  echo "✅ [PLAN-CHECK] Tasks valid ($task_count tasks)"
   return 0
 }
 
@@ -199,7 +196,7 @@ case "${1:-seal}" in
     if [[ -n "$CURRENT_COMMIT" ]]; then
       echo "$CURRENT_COMMIT" > "$SEAL_COMMIT_FILE"
     fi
-    echo "🔒 [PLAN] Context specifications sealed with SHA-256: ${SEAL_HASH:0:16}..."
+    echo "🔒 [PLAN] Sealed (${SEAL_HASH:0:8})"
     ;;
   validate|check-tasks)
     validate_tasks_spec "${2:-$CONTEXT_DIR/Tasks_list.md}"
@@ -207,19 +204,16 @@ case "${1:-seal}" in
   check)
     validate_tasks_spec "${2:-$CONTEXT_DIR/Tasks_list.md}"
     if [[ ! -f "$SEAL_FILE" ]]; then
-      echo "⚠️ [PLAN] No seal file found at $SEAL_FILE (Unsealed Plan)."
+      echo "⚠️ [PLAN] Unsealed (no $SEAL_FILE)"
       exit 0
     fi
     CURRENT_HASH="$(compute_seal)"
     EXPECTED_HASH="$(head -n 1 "$SEAL_FILE" | tr -d '[:space:]')"
     if [[ "$CURRENT_HASH" == "$EXPECTED_HASH" ]]; then
-      echo "✅ [PLAN] Plan Seal Valid: ${CURRENT_HASH:0:16}... (No specification drift detected)"
+      echo "✅ [PLAN] Valid (${CURRENT_HASH:0:8})"
       exit 0
     else
-      echo "❌ [PLAN] SPECIFICATION DRIFT DETECTED!"
-      echo "Expected: $EXPECTED_HASH"
-      echo "Current:  $CURRENT_HASH"
-      echo "Specifications were modified after plan seal. Run 'scripts/plan.sh restore' or 'scripts/plan.sh seal'."
+      echo "❌ [PLAN] DRIFT DETECTED (expected ${EXPECTED_HASH:0:8}, current ${CURRENT_HASH:0:8})"
       exit 1
     fi
     ;;
