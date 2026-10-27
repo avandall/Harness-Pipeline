@@ -654,7 +654,7 @@ Thực thi trọn vẹn Task ${active_task} trong phiên làm việc này:
    - Nếu là 'feature': Viết test case/contract trước trong thư mục tests/, chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>' thấy test fail (Red), sau đó mới implement code cho pass (Green).
    - Nếu là 'refactor': Giữ nguyên bộ test sẵn có, implement tối ưu code và chạy Tier 1 test target.
 3. Thực thi tuần tự từng step: Sửa code trong scope ──► Chạy 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>'.
-4. Trước khi kết thúc task: Chạy full 'python3 pipeline/scripts/verify.py --tier 2' đảm bảo không gây regression cho bất kỳ module nào khác trong toàn dự án.
+4. Trước khi kết thúc task: BẮT BUỘC chạy 'python3 pipeline/scripts/verify.py --tier 0' (kiểm tra triệt để Mypy type check và Ruff lint trên các file đã sửa) và 'python3 pipeline/scripts/verify.py --tier 1 --test-target <file_test>', sau đó chạy full 'python3 pipeline/scripts/verify.py --tier 2'. Tuyệt đối không để sót lỗi Mypy/Ruff.
 5. Cập nhật tiến độ liên tục vào STATUS.md, PROGRESS_LOG.md và PLAN.md ra filesystem.
 6. Khi ${active_task} đã xong 100% và verify Tier 2 PASS: Đánh dấu [x] DONE dòng ${active_task} trong Tasks_list.md và DỪNG PHIÊN (Harness sẽ tự động tạo commit chuyên nghiệp chi tiết gồm Summary, Key Changes, Verification).
 
@@ -1214,26 +1214,64 @@ execute_worker_for_task() {
   local executor_prompt
   executor_prompt=$(_build_executor_payload_safe "$task" "$task_spec" "PARALLEL-WORKER" "$complexity_notice")
 
-  (
-    cd "$worktree_dir"
-    _run_agent_turn "$executor_prompt" "$PRINT_TIMEOUT" "1" "$EXECUTOR_MODEL" "WORKER-${task}"
-  )
-  local agent_exit=$?
-
-  if [[ $agent_exit -ne 0 ]]; then
-    log_error "[Worker $task] Agent failed (exit: $agent_exit). Marked BLOCKED."
-    safe_update_task_status "$task" "[!] BLOCKED"
-    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] failed (Exit code: $agent_exit). Task marked [!] BLOCKED."
-    return 1
-  fi
-
-  # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree with diff awareness)
   local base_branch_for_diff
   base_branch_for_diff="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
   [[ -z "$base_branch_for_diff" || "$base_branch_for_diff" == "HEAD" ]] && base_branch_for_diff="master"
-  if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff"); then
-    log_error "[Worker $task] Tier 1 FAILED. Marked BLOCKED."
+
+  local max_worker_retries=2
+  local worker_attempt=1
+  local local_verified=false
+
+  while (( worker_attempt <= max_worker_retries )); do
+    local current_prompt
+    if (( worker_attempt == 1 )); then
+      current_prompt="$executor_prompt"
+    else
+      local truncated_errors=""
+      if [[ -f "${worktree_dir}/pipeline/docs/runtime/VERIFICATION_REPORT.md" ]]; then
+        truncated_errors=$(head -n 40 "${worktree_dir}/pipeline/docs/runtime/VERIFICATION_REPORT.md")
+      elif [[ -f "${RUNTIME_DIR}/VERIFICATION_REPORT.md" ]]; then
+        truncated_errors=$(head -n 40 "${RUNTIME_DIR}/VERIFICATION_REPORT.md")
+      fi
+      current_prompt="[REPAIR TURN — ATTEMPT ${worker_attempt}/${max_worker_retries} — TARGET: ${task}]
+Your previous attempt failed local Tier 1 verification (Diff Check) in worktree.
+=== ❌ VERIFICATION FAILURE REPORT ===
+${truncated_errors}
+
+=== 🎯 REPAIR INSTRUCTIONS ===
+1. Analyze the exact error messages above (e.g. Mypy type annotations, Ruff lint, or test failures).
+2. Fix the issues directly in the affected files within scope.
+3. Verify your fixes by running:
+   python3 pipeline/scripts/verify.py --tier 0
+   python3 pipeline/scripts/verify.py --tier 1 --diff ${base_branch_for_diff}
+4. When 100% PASS, stop the turn so harness can proceed with merge staging."
+    fi
+
+    (
+      cd "$worktree_dir"
+      _run_agent_turn "$current_prompt" "$PRINT_TIMEOUT" "$worker_attempt" "$EXECUTOR_MODEL" "WORKER-${task}"
+    )
+    local agent_exit=$?
+
+    if [[ $agent_exit -ne 0 ]]; then
+      log_warn "[Worker $task] Agent turn failed (exit: $agent_exit) on attempt $worker_attempt."
+    fi
+
+    # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree with diff awareness)
+    if (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff"); then
+      local_verified=true
+      break
+    else
+      log_warn "[Worker $task] Tier 1 verification failed on attempt $worker_attempt/$max_worker_retries."
+    fi
+
+    worker_attempt=$(( worker_attempt + 1 ))
+  done
+
+  if [[ "$local_verified" != "true" ]]; then
+    log_error "[Worker $task] Tier 1 FAILED after $max_worker_retries attempts. Marked BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed local Tier 1 verification in worktree (after ${max_worker_retries} attempts). Marked [!] BLOCKED."
     return 1
   fi
 
@@ -1252,12 +1290,14 @@ execute_worker_for_task() {
     if [[ -z "${merge_fd:-}" ]]; then
       log_error "[BORS] Failed to allocate dynamic file descriptor for merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Merge lock FD allocation failure. Marked [!] BLOCKED."
       exit 1
     fi
 
     wait_and_acquire_merge_lock "$merge_fd" || {
       log_error "[BORS] Worker $task failed to acquire merge lock!"
       safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Timeout acquiring merge lock. Marked [!] BLOCKED."
       exit 1
     }
 
@@ -1273,6 +1313,7 @@ execute_worker_for_task() {
     if [[ "$current_branch" != "$base_branch" ]]; then
       log_error "[BORS] Fatal: repo_root on '$current_branch', expected '$base_branch'! Aborting for $task."
       safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: repo_root branch mismatch ('$current_branch' vs '$base_branch'). Marked [!] BLOCKED."
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
@@ -1304,6 +1345,7 @@ execute_worker_for_task() {
         log_warn "[BORS] Worker $task conflict unhealable. Aborting rebase."
         git -C "$worktree_dir" rebase --abort 2>/dev/null || true
         safe_update_task_status "$task" "[!] BLOCKED"
+        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Unhealable rebase conflict on [${conflicted_files}]. Marked [!] BLOCKED."
         flock -u "$merge_fd" 2>/dev/null || true
         exit 1
       else
@@ -1328,6 +1370,7 @@ execute_worker_for_task() {
       git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
       git -C "$repo_root" clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
       safe_update_task_status "$task" "[!] BLOCKED"
+      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Squash merge failure into ${base_branch}. Marked [!] BLOCKED."
       flock -u "$merge_fd" 2>/dev/null || true
       exit 1
     fi
