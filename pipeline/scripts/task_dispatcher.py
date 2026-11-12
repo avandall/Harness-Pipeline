@@ -22,6 +22,11 @@ import re
 import sys
 from pathlib import Path
 
+# In-memory performance caches for AST parsing & dependency resolution
+_MODULE_PATH_CACHE: dict[tuple[str, str], Path | None] = {}
+_DIRECT_IMPORTS_CACHE: dict[str, tuple[float, set[Path]]] = {}
+_TRANSITIVE_AST_CACHE: dict[tuple[tuple[str, ...], str, int], set[str]] = {}
+
 
 class TaskMeta:
     def __init__(
@@ -83,6 +88,13 @@ def extract_task_phases(content: str) -> dict[str, tuple[int, str]]:
         if task_match:
             tid = task_match.group(1)
             phases[tid] = (current_phase_num, current_phase_name)
+
+        # Nhận diện task trong bảng
+        table_task_match = re.search(r"\|\s*`?(TASK-[A-Za-z0-9_-]+)`?\s*\|", line)
+        if table_task_match:
+            tid = table_task_match.group(1)
+            if tid not in phases:
+                phases[tid] = (current_phase_num, current_phase_name)
 
     # Quét khối metadata spec chi tiết (ví dụ: Phase: Phase 1: Foundation)
     spec_matches = re.finditer(
@@ -185,8 +197,8 @@ _STATUS_RE = re.compile(r"\[( |/|x|X|!)\]\s*(TODO|IN_PROGRESS|DONE|BLOCKED)?")
 _RANGE_RE = re.compile(r"TASK-(\d+)[A-Za-z]*\s*(?:đến|den|to|->|–|—)\s*TASK-(\d+)[A-Za-z]*", re.IGNORECASE)
 
 
-def parse_status_map(content: str) -> dict[str, str]:
-    """Trả về {task_id: 'DONE'|'BLOCKED'|'TODO'|'IN_PROGRESS'} từ bảng tổng quan Tasks_list.md (mọi trạng thái)."""
+def parse_status_map(content: str, state_file_path: Path | None = None) -> dict[str, str]:
+    """Trả về {task_id: 'DONE'|'BLOCKED'|'TODO'|'IN_PROGRESS'} từ bảng tổng quan Tasks_list.md và task_states.json (nếu có)."""
     result: dict[str, str] = {}
     for line in content.splitlines():
         s = line.strip()
@@ -206,6 +218,25 @@ def parse_status_map(content: str) -> dict[str, str]:
                 status = {"x": "DONE", "!": "BLOCKED", "/": "IN_PROGRESS", " ": "TODO"}[marker]
                 break
         result.setdefault(m_id.group(0), status)
+
+    # Nếu có task_states.json (state store tách biệt), ưu tiên nạp đè trạng thái chính xác
+    if state_file_path and state_file_path.is_file():
+        try:
+            states_json = json.loads(state_file_path.read_text(encoding="utf-8"))
+            for tid, info in states_json.items():
+                if isinstance(info, dict) and "status" in info:
+                    st_val = str(info["status"]).upper().strip("`[] ")
+                    if "DONE" in st_val:
+                        result[tid] = "DONE"
+                    elif "BLOCK" in st_val:
+                        result[tid] = "BLOCKED"
+                    elif "PROGRESS" in st_val:
+                        result[tid] = "IN_PROGRESS"
+                    elif "TODO" in st_val:
+                        result[tid] = "TODO"
+        except Exception:
+            pass
+
     return result
 
 
@@ -246,30 +277,106 @@ def load_graph(file_path: str) -> tuple[dict[str, set[str]], dict[str, str]]:
     if not path.is_file():
         return {}, {}
     content = path.read_text(encoding="utf-8", errors="ignore")
-    status = parse_status_map(content)
+    state_file = None
+    # Tìm file task_states.json nếu tồn tại trong .ralph
+    for candidate_dir in (
+        path.parent.parent.parent / ".ralph",
+        path.parent.parent / ".ralph",
+        Path.cwd() / "pipeline" / ".ralph",
+        Path.cwd() / ".ralph",
+    ):
+        sf = candidate_dir / "task_states.json"
+        if sf.is_file():
+            state_file = sf
+            break
+    status = parse_status_map(content, state_file)
     return parse_dependencies(content, set(status)), status
 
 
 def module_to_file_path(module_name: str, repo_root: Path) -> Path | None:
-    """Chuyển đổi module import (vd: services.auth) thành file path (.py)."""
+    """Chuyển đổi module import (vd: services.auth) thành file path (.py) với memoization cache."""
+    cache_key = (module_name, str(repo_root.resolve()))
+    if cache_key in _MODULE_PATH_CACHE:
+        return _MODULE_PATH_CACHE[cache_key]
+
     rel_path_py = Path(*module_name.split(".")).with_suffix(".py")
     search_dirs = [repo_root, repo_root / "src", repo_root / "app", repo_root / "pipeline"]
 
+    result = None
     for d in search_dirs:
         candidate = d / rel_path_py
         if candidate.is_file():
-            return candidate
+            result = candidate
+            break
         candidate_init = d / Path(*module_name.split(".")) / "__init__.py"
         if candidate_init.is_file():
-            return candidate_init
+            result = candidate_init
+            break
 
-    return None
+    _MODULE_PATH_CACHE[cache_key] = result
+    return result
+
+
+def _get_file_direct_imports(f_path: Path, repo_root: Path) -> set[Path]:
+    """Parse AST trực tiếp của 1 file với mtime cache để tránh đọc lại đĩa."""
+    if not f_path.is_file():
+        return set()
+
+    try:
+        st_mtime = f_path.stat().st_mtime
+    except OSError:
+        return set()
+
+    f_key = str(f_path.resolve())
+    if f_key in _DIRECT_IMPORTS_CACHE:
+        cached_mtime, cached_imports = _DIRECT_IMPORTS_CACHE[f_key]
+        if cached_mtime == st_mtime:
+            return cached_imports
+
+    resolved_imports: set[Path] = set()
+    try:
+        content = f_path.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    resolved = module_to_file_path(a.name, repo_root)
+                    if resolved:
+                        resolved_imports.add(resolved.resolve())
+            elif isinstance(node, ast.ImportFrom):
+                if node.level and node.level > 0:
+                    target_dir = f_path.parent
+                    for _ in range(node.level - 1):
+                        target_dir = target_dir.parent
+                    if node.module:
+                        rel_path = target_dir / (node.module.replace(".", "/") + ".py")
+                        if rel_path.is_file():
+                            resolved_imports.add(rel_path.resolve())
+                    else:
+                        for n in node.names:
+                            rel_path = target_dir / f"{n.name}.py"
+                            if rel_path.is_file():
+                                resolved_imports.add(rel_path.resolve())
+                elif node.module:
+                    resolved = module_to_file_path(node.module, repo_root)
+                    if resolved:
+                        resolved_imports.add(resolved.resolve())
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        pass
+
+    _DIRECT_IMPORTS_CACHE[f_key] = (st_mtime, resolved_imports)
+    return resolved_imports
 
 
 def extract_ast_imports_transitive(target_files: list[str], repo_root: Path, depth: int = 3) -> set[str]:
-    """BFS traversal qua tối đa `depth` tầng import để bắt transitive coupling."""
-    visited_files = set()
-    frontier_files = set()
+    """BFS traversal qua tối đa `depth` tầng import với caching đa tầng."""
+    sorted_files = tuple(sorted(target_files))
+    cache_key = (sorted_files, str(repo_root.resolve()), depth)
+    if cache_key in _TRANSITIVE_AST_CACHE:
+        return _TRANSITIVE_AST_CACHE[cache_key]
+
+    visited_files: set[Path] = set()
+    frontier_files: set[Path] = set()
 
     for f_str in target_files:
         f_path = repo_root / f_str.rstrip("*").rstrip("/")
@@ -280,45 +387,22 @@ def extract_ast_imports_transitive(target_files: list[str], repo_root: Path, dep
                 frontier_files.add(py_file.resolve())
 
     for _ in range(depth):
-        next_frontier = set()
+        next_frontier: set[Path] = set()
         for f_path in frontier_files:
             if f_path in visited_files or not f_path.is_file():
                 continue
             visited_files.add(f_path)
 
-            try:
-                content = f_path.read_text(encoding="utf-8", errors="ignore")
-                tree = ast.parse(content)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for a in node.names:
-                            resolved = module_to_file_path(a.name, repo_root)
-                            if resolved:
-                                next_frontier.add(resolved.resolve())
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.level and node.level > 0:
-                            target_dir = f_path.parent
-                            for _ in range(node.level - 1):
-                                target_dir = target_dir.parent
-                            if node.module:
-                                rel_path = target_dir / (node.module.replace(".", "/") + ".py")
-                                if rel_path.is_file():
-                                    next_frontier.add(rel_path.resolve())
-                            else:
-                                for n in node.names:
-                                    rel_path = target_dir / f"{n.name}.py"
-                                    if rel_path.is_file():
-                                        next_frontier.add(rel_path.resolve())
-                        elif node.module:
-                            resolved = module_to_file_path(node.module, repo_root)
-                            if resolved:
-                                next_frontier.add(resolved.resolve())
-            except (OSError, SyntaxError, UnicodeDecodeError):
-                continue
+            direct = _get_file_direct_imports(f_path, repo_root)
+            for imp in direct:
+                if imp not in visited_files:
+                    next_frontier.add(imp)
 
         frontier_files = next_frontier
 
-    return {str(p.relative_to(repo_root)) if p.is_relative_to(repo_root) else str(p) for p in visited_files}
+    res = {str(p.relative_to(repo_root)) if p.is_relative_to(repo_root) else str(p) for p in visited_files}
+    _TRANSITIVE_AST_CACHE[cache_key] = res
+    return res
 
 
 def normalize_file_set(files: list[str], repo_root: Path) -> set[str]:
@@ -423,6 +507,31 @@ def build_waves(
     return waves
 
 
+def is_permanently_blocked(
+    task_id: str,
+    deps: dict[str, set[str]],
+    status: dict[str, str],
+    visited: set[str] | None = None,
+) -> bool:
+    """Kiểm tra đệ quy xem task hoặc bất kỳ upstream dependency nào của nó đã bị BLOCKED/QUARANTINED."""
+    if visited is None:
+        visited = set()
+    if task_id in visited:
+        return False
+    visited.add(task_id)
+    s = status.get(task_id, "").upper()
+    if any(k in s for k in ("BLOCK", "QUARANTINE")):
+        return True
+    needed = deps.get(task_id, set())
+    for d in needed:
+        ds = status.get(d, "").upper()
+        if any(k in ds for k in ("BLOCK", "QUARANTINE")):
+            return True
+        if is_permanently_blocked(d, deps, status, visited):
+            return True
+    return False
+
+
 def get_next_available_task(
     tasks: list[TaskMeta],
     running_task_ids: set[str],
@@ -447,6 +556,14 @@ def get_next_available_task(
 
     tasks_sorted = sorted(tasks, key=lambda t: (t.phase_num, t.order))
 
+    # Bỏ qua các task đã hoàn tất hoặc bị chặn vĩnh viễn khi tính active phase
+    runnable_tasks = [
+        t for t in tasks_sorted
+        if not is_permanently_blocked(t.task_id, deps, status) and status.get(t.task_id) != "DONE"
+    ]
+    if not runnable_tasks:
+        return ""
+
     # Tìm các task đang chạy để lấy tập files và imports
     running_files: set[str] = set()
     running_imports: set[str] = set()
@@ -460,9 +577,9 @@ def get_next_available_task(
             running_files.update(t_files)
             running_imports.update(t_imports)
 
-    # Xác định Phase đang hoạt động (Phase nhỏ nhất trong tất cả các task chưa hoàn tất)
-    active_phase = min(t.phase_num for t in tasks_sorted)
-    pending_tasks = [t for t in tasks_sorted if t.task_id not in running_task_ids]
+    # Xác định Phase đang hoạt động (Phase nhỏ nhất trong tất cả các task khả thi chưa hoàn tất)
+    active_phase = min(t.phase_num for t in runnable_tasks)
+    pending_tasks = [t for t in runnable_tasks if t.task_id not in running_task_ids]
     if not pending_tasks:
         return ""
 

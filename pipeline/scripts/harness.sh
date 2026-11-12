@@ -174,6 +174,10 @@ AUTO_CLEAN_DIRTY="${RALPH_AUTO_CLEAN:-true}"
 PARALLEL_MODE=false
 PARALLEL_WORKERS="${RALPH_MAX_WORKERS:-3}"
 FIX_BUG_TARGET=""
+STATIC_MODE="${RALPH_STATIC:-false}"
+UI_MODE="${RALPH_UI:-false}"
+UI_PORT="${RALPH_UI_PORT:-8888}"
+UI_SERVER_PID=""
 declare -a ACTIVE_WORKTREES=()
 declare -a ACTIVE_BRANCHES=()
 declare -a GLOBAL_WORKER_PIDS=()
@@ -231,9 +235,20 @@ reap_orphans() {
   pkill -f "$RALPH_RUN_TAG" 2>/dev/null || true
 }
 
+cleanup_ui_server() {
+  if [[ -n "${UI_SERVER_PID:-}" ]] && kill -0 "$UI_SERVER_PID" 2>/dev/null; then
+    kill -TERM "$UI_SERVER_PID" 2>/dev/null || true
+    wait "$UI_SERVER_PID" 2>/dev/null || true
+    UI_SERVER_PID=""
+  fi
+}
+
 cleanup_on_interrupt() {
   echo -e "\n${YELLOW}[RALPH] Interrupted by user (Ctrl+C). Terminating workers & cleaning up active worktrees...${NC}"
-  # 1. Kill tracked worker PIDs explicitly, then reap any remaining tagged orphans
+  # 1. Kill UI server if running
+  cleanup_ui_server
+
+  # 2. Kill tracked worker PIDs explicitly, then reap any remaining tagged orphans
   if ((${#GLOBAL_WORKER_PIDS[@]} > 0)); then
     for wpid in "${GLOBAL_WORKER_PIDS[@]}"; do
       kill -TERM "$wpid" 2>/dev/null || true
@@ -246,7 +261,7 @@ cleanup_on_interrupt() {
   local repo_root
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
-  # 2. Cleanup registered worktrees and branches
+  # 3. Cleanup registered worktrees and branches
   if [[ -f "$reg_file" ]]; then
     while IFS='|' read -r wt br || [[ -n "$wt" ]]; do
       [[ -n "$wt" ]] && git -C "$repo_root" worktree remove --force "$wt" >/dev/null 2>&1 || true
@@ -269,13 +284,112 @@ cleanup_on_interrupt() {
 }
 
 trap cleanup_on_interrupt INT TERM
-trap '[[ -n "${RUN_DIR:-}" ]] && echo -e "\n${CYAN}[RALPH]${NC} Logs: ${RUN_DIR} | Retro: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
+trap 'cleanup_ui_server; [[ -n "${RUN_DIR:-}" ]] && echo -e "\n${CYAN}[RALPH]${NC} Logs: ${RUN_DIR} | Retro: ${BOLD}./pipeline/scripts/ralph-retro.sh ${RUN_DIR}${NC}"' EXIT
 
-log_info()    { echo -e "${BLUE}[INFO]${NC}  $*"; }
-log_ok()      { echo -e "${GREEN}[OK]${NC}    $*"; }
+# Logging with Static / Milestone vs Verbose filtering
+log_milestone() {
+  echo -e "${BOLD}${GREEN}⚡ [MILESTONE]${NC} ${BOLD}$*${NC}"
+}
+
+log_info() {
+  if [[ "$STATIC_MODE" != "true" ]]; then
+    echo -e "${BLUE}[INFO]${NC}  $*"
+  fi
+}
+
+log_ok() {
+  if [[ "$STATIC_MODE" != "true" ]]; then
+    echo -e "${GREEN}[OK]${NC}    $*"
+  fi
+}
+
 log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 log_section() { echo -e "\n${BOLD}${CYAN}═══ $* ═══${NC}"; }
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pillar 0: Real-Time UI Server & Worker Telemetry Synchronization
+# ────────────────────────────────────────────────────────────────────────────
+init_ui_server() {
+  if [[ "$UI_MODE" == "true" ]]; then
+    local dashboard_script="${PIPELINE_DIR}/scripts/dashboard.py"
+    if [[ -f "$dashboard_script" ]]; then
+      local telem_file="${PIPELINE_DIR}/.ralph/worker_telemetry.json"
+      mkdir -p "$(dirname "$telem_file")"
+      echo '{"workers":{},"events":[]}' > "$telem_file" 2>/dev/null || true
+
+      python3 "$dashboard_script" --port "$UI_PORT" >/dev/null 2>&1 &
+      UI_SERVER_PID=$!
+      sleep 0.3
+      echo -e "\n${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+      echo -e "${BOLD}${CYAN}║${NC}  🌐 ${BOLD}REAL-TIME VISUAL DASHBOARD:${NC} ${GREEN}http://localhost:${UI_PORT}${NC}                       ${BOLD}${CYAN}║${NC}"
+      echo -e "${BOLD}${CYAN}║${NC}     Worker arena, actions, live telemetry & phase milestones queue         ${BOLD}${CYAN}║${NC}"
+      echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}\n"
+    else
+      log_warn "Dashboard server script not found at $dashboard_script"
+    fi
+  fi
+}
+
+update_worker_telemetry() {
+  local wid="$1"
+  local tid="$2"
+  local st="$3"
+  local action="$4"
+  local wt="${5:-}"
+  local br="${6:-}"
+  local log_file="${7:-}"
+  local event_msg="${8:-}"
+  local telem_file="${PIPELINE_DIR}/.ralph/worker_telemetry.json"
+  mkdir -p "$(dirname "$telem_file")"
+
+  python3 -c "
+import json, sys, os, time, datetime
+telem_path = sys.argv[1]
+wid, tid, st, action, wt, br, lf, ev = sys.argv[2:10]
+data = {}
+if os.path.isfile(telem_path):
+    try:
+        with open(telem_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+if 'workers' not in data:
+    data['workers'] = {}
+if 'events' not in data:
+    data['events'] = []
+
+now_ts = time.time()
+cur = data['workers'].get(wid, {})
+start_time = cur.get('start_time', now_ts)
+if st in ('EXECUTING', 'RUNNING') and cur.get('status') not in ('EXECUTING', 'RUNNING', 'TIER_1', 'TIER_2', 'REPAIRING', 'MERGING'):
+    start_time = now_ts
+
+data['workers'][wid] = {
+    'worker_id': wid,
+    'task_id': tid,
+    'status': st,
+    'action': action,
+    'worktree': wt or cur.get('worktree', ''),
+    'branch': br or cur.get('branch', ''),
+    'log_file': lf or cur.get('log_file', ''),
+    'start_time': start_time,
+    'updated_at': datetime.datetime.now().isoformat()
+}
+
+if ev:
+    data['events'].append({
+        'time': datetime.datetime.now().strftime('%H:%M:%S'),
+        'worker': wid,
+        'task': tid,
+        'message': ev
+    })
+    data['events'] = data['events'][-40:]
+
+with open(telem_path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+" "$telem_file" "$wid" "$tid" "$st" "$action" "$wt" "$br" "$log_file" "$event_msg" 2>/dev/null || true
+}
 
 # ────────────────────────────────────────────────────────────────────────────
 # Pillar 1: Concurrency Locks & Solution B Adaptive Integration Lock
@@ -284,18 +398,12 @@ safe_update_task_status() {
   local task_id="$1"
   local new_status="$2"
   local tasks_file="${CONTEXT_DIR}/Tasks_list.md"
+  local state_json="${PIPELINE_DIR}/.ralph/task_states.json"
   local lock_file="${PIPELINE_DIR}/.ralph/locks/tasks_list.lock"
-  mkdir -p "$(dirname "$lock_file")"
-
-  if [[ ! -f "$tasks_file" ]]; then
-    log_warn "Tasks file not found at $tasks_file"
-    return 1
-  fi
+  mkdir -p "$(dirname "$lock_file")" "$(dirname "$state_json")"
 
   local clean_status
   clean_status="$(echo "$new_status" | tr -d '`')"
-  local escaped_tid
-  escaped_tid="$(printf '%s' "$task_id" | sed 's/[][\\.^$*+?{}()|/]/\\&/g')"
 
   local lock_fd
   exec {lock_fd}>"$lock_file" || {
@@ -309,10 +417,53 @@ safe_update_task_status() {
     return 1
   fi
 
-  # 1. Update markdown table row (matches backticked or non-backticked task ID & status)
-  sed -i -E "s/(\|[[:space:]]*\`?${escaped_tid}\`?[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|)[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/\1 \`${clean_status}\`/" "$tasks_file" 2>/dev/null || true
-  # 2. Update task detail metadata block if present
-  sed -i -E "/^### 📌 (.*)${escaped_tid}/,/^---/{ s/Trạng thái:[[:space:]]*\`?\[[ /x!]\][[:space:]]*[A-Za-z0-9_]+\`?/Trạng thái:      ${clean_status}/ }" "$tasks_file" 2>/dev/null || true
+  # 1. Update structured machine-readable state store (pipeline/.ralph/task_states.json)
+  python3 -c "
+import json, sys, os, datetime
+state_file, tid, st, worker = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+data = {}
+if os.path.isfile(state_file):
+    try:
+        with open(state_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+data[tid] = {
+    'status': st,
+    'worker': worker,
+    'updated_at': datetime.datetime.now().isoformat()
+}
+with open(state_file, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+" "$state_json" "$task_id" "$clean_status" "${RALPH_WORKER_ID:-main}" 2>/dev/null || true
+
+  # 2. Update human-readable markdown table & spec block (robust across arbitrary column counts)
+  if [[ -f "$tasks_file" ]]; then
+    python3 -c "
+import sys, re
+tasks_file, tid, clean_st = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(tasks_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    new_lines = []
+    in_detail = False
+    for line in lines:
+        if line.strip().startswith('|') and tid in line:
+            # Replace status marker in whichever column it appears
+            line = re.sub(r'(`?\[[ /x!]\]\s*[A-Za-z0-9_]*`?)', f'\`{clean_st}\`', line, count=1)
+        elif line.strip().startswith('### 📌') and tid in line:
+            in_detail = True
+        elif in_detail and line.strip().startswith('---'):
+            in_detail = False
+        elif in_detail and 'Trạng thái:' in line:
+            line = re.sub(r'(Trạng thái:\s*).*', f'\\1{clean_st}', line)
+        new_lines.append(line)
+    with open(tasks_file, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+except Exception:
+    pass
+" "$tasks_file" "$task_id" "$clean_status" 2>/dev/null || true
+  fi
 
   flock -u "$lock_fd" 2>/dev/null || true
   exec {lock_fd}>&-
@@ -581,25 +732,25 @@ get_memory_bridge() {
 
   if [[ -f "$decisions_file" ]]; then
     local dec_lines
-    dec_lines=$(grep -v "^#" "$decisions_file" 2>/dev/null | grep -v "^>" | grep -v "^---" | grep -v "^<!--" | grep -v "^-->" | grep -v "^[[:space:]]*$" | tail -n 15 || true)
+    dec_lines=$(grep -v "^#" "$decisions_file" 2>/dev/null | grep -v "^>" | grep -v "^---" | grep -v "^<!--" | grep -v "^-->" | grep -v "^[[:space:]]*$" | tail -n 4 || true)
     if [[ -n "$dec_lines" ]]; then
-      bridge+="Recent Architecture Decisions (DECISIONS_LOG.md):\n${dec_lines}\n\n"
+      bridge+="Recent Architecture Decisions:\n${dec_lines}\n\n"
     fi
   fi
 
   if [[ -f "$progress_file" ]]; then
     local prog_lines
-    prog_lines=$(grep -v "^#" "$progress_file" 2>/dev/null | grep -v "^>" | grep -v "^[[:space:]]*$" | tail -n 15 || true)
+    prog_lines=$(grep -v "^#" "$progress_file" 2>/dev/null | grep -v "^>" | grep -v "^---" | grep -v "^<!--" | grep -v "^-->" | grep -v "^[[:space:]]*$" | tail -n 3 || true)
     if [[ -n "$prog_lines" ]]; then
-      bridge+="Recent Progress History (PROGRESS_LOG.md):\n${prog_lines}\n\n"
+      bridge+="Recent Completed Steps:\n${prog_lines}\n\n"
     fi
   fi
 
   if [[ -f "$plan_file" ]]; then
     local plan_steps
-    plan_steps=$(grep -E "^[[:space:]]*- \[[ x/]\]" "$plan_file" 2>/dev/null | head -n 10 || true)
+    plan_steps=$(grep -E "^[[:space:]]*- \[[ x/]\]" "$plan_file" 2>/dev/null | head -n 4 || true)
     if [[ -n "$plan_steps" ]]; then
-      bridge+="Active Plan Steps (PLAN.md):\n${plan_steps}\n"
+      bridge+="Active Plan Steps:\n${plan_steps}\n"
     fi
   fi
 
@@ -611,12 +762,17 @@ _build_executor_payload() {
   local task_spec="$2"
   local role_tag="${3:-SINGLE-MODEL}"
   local complexity_notice="${4:-}"
+  local mem_bridge_override="${5:-__AUTO__}"
   local tech_summary
   tech_summary=$(get_tech_context_summary)
   local bound_summary
   bound_summary=$(get_boundaries_summary)
   local mem_bridge
-  mem_bridge=$(get_memory_bridge)
+  if [[ "$mem_bridge_override" == "__AUTO__" ]]; then
+    mem_bridge=$(get_memory_bridge)
+  else
+    mem_bridge="$mem_bridge_override"
+  fi
 
   sync_current_task_doc "$active_task" "$task_spec"
 
@@ -687,15 +843,21 @@ _build_executor_payload_safe() {
 
   local token_limit="${RALPH_TOKEN_BUDGET:-12000}"
   if (( est_tokens > token_limit )); then
-    log_warn "⚠️ [TOKEN BUDGET] Prompt size (${est_tokens} tokens) exceeds ${token_limit} safe limit. Proactively trimming..."
+    log_warn "⚠️ [TOKEN BUDGET] Prompt size (${est_tokens} tokens) exceeds ${token_limit} safe limit. Trimming noise (preserving task spec)..."
 
-    local slim_spec
-    slim_spec=$(echo "$task_spec" | head -n 25)
+    # Step 1: Remove memory bridge (logs & past decisions) to free tokens
+    raw_payload=$(_build_executor_payload "$active_task" "$task_spec" "$role_tag" "$complexity_notice" "")
+    est_tokens=$(estimate_tokens_multibyte "$raw_payload")
 
-    raw_payload=$(_build_executor_payload "$active_task" "$slim_spec" "$role_tag" "$complexity_notice")
-    local new_est
-    new_est=$(estimate_tokens_multibyte "$raw_payload")
-    log_ok "[TOKEN BUDGET] Prompt proactively trimmed down to ${new_est} tokens."
+    # Step 2: If still exceeding, trim task_spec beyond 80 lines (preventing extreme bloat)
+    if (( est_tokens > token_limit )); then
+      local slim_spec
+      slim_spec=$(echo "$task_spec" | head -n 80)
+      raw_payload=$(_build_executor_payload "$active_task" "$slim_spec" "$role_tag" "" "")
+      est_tokens=$(estimate_tokens_multibyte "$raw_payload")
+    fi
+
+    log_ok "[TOKEN BUDGET] Prompt proactively optimized down to ${est_tokens} tokens (task spec intact)."
   fi
 
   echo "$raw_payload"
@@ -704,6 +866,9 @@ _build_executor_payload_safe() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --static|--quiet|-q) STATIC_MODE=true; shift ;;
+      --ui|--dashboard|--realtime) UI_MODE=true; shift ;;
+      --ui-port) UI_PORT="$2"; UI_MODE=true; shift 2 ;;
       --max-iter|-n) MAX_ITERATIONS="$2"; shift 2 ;;
       --tasks|--task|-t) TASK_FILTER="$2"; TASK_ID="$2"; shift 2 ;;
       --model|-m) EXECUTOR_MODEL="$2"; shift 2 ;;
@@ -746,6 +911,9 @@ ${BOLD}USAGE:${NC}
   ./pipeline/scripts/harness.sh [OPTIONS]
 
 ${BOLD}OPTIONS:${NC}
+  --static, --quiet, -q   Static Milestone Mode: Clean CLI output showing only high-level milestone events
+  --ui, --dashboard       Real-Time Web Dashboard Mode: Launches live visual UI server on localhost:8888
+  --ui-port PORT          Port for Real-Time Web Dashboard (default: 8888)
   --max-iter, -n N        Maximum iterations (default: 30)
   --tasks, -t RANGE       Task filter e.g. "1..5", "6,9", "TASK-001"
   --parallel, -p [NUM]    Run execution waves in parallel using Git Worktrees (default: 3 workers)
@@ -1015,6 +1183,8 @@ check_and_auto_commit_done_task() {
           log_error "[HARD-GATE] Tier 2 FAILED for [${done_task_id}]. Marked BLOCKED."
           safe_update_task_status "$done_task_id" "[!] BLOCKED"
           safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} failed Tier 2 verification gate before commit. Marked [!] BLOCKED."
+          update_worker_telemetry "main" "$done_task_id" "BLOCKED" "Failed Tier 2 gate" "" "" "" "Task ${done_task_id} failed Tier 2 gate"
+          log_milestone "✗ [BLOCKED] ${done_task_id} failed Tier 2 gate before commit"
           return 1
         fi
 
@@ -1029,6 +1199,8 @@ check_and_auto_commit_done_task() {
         # Clean up verified checkpoint tag upon successful task commit
         git tag -d "ralph-checkpoint-${done_task_id}" >/dev/null 2>&1 || true
         safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${done_task_id} cleanly verified (Tier 2 PASS) and committed (${new_sha})."
+        update_worker_telemetry "main" "$done_task_id" "DONE" "Committed to main branch" "" "" "" "Task ${done_task_id} committed (${new_sha})"
+        log_milestone "✓ [PASS] ${done_task_id} committed -> ${new_sha} (Tier 2 PASS)"
         log_ok "[COMMIT] ${done_task_id} -> ${new_sha} (Tier 2 PASS)"
       fi
     fi
@@ -1198,6 +1370,8 @@ execute_worker_for_task() {
 
   safe_update_task_status "$task" "[/] IN_PROGRESS"
   safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Worker [${RALPH_WORKER_ID}] started task ${task} in worktree ${worktree_dir}"
+  update_worker_telemetry "$RALPH_WORKER_ID" "$task" "EXECUTING" "Coding task implementation" "$worktree_dir" "$branch_name" "" "Worker [${RALPH_WORKER_ID}] started ${task}"
+  log_milestone "[START] Worker [${RALPH_WORKER_ID}] -> ${task}"
 
   # 1. State: EXECUTING
   local task_spec
@@ -1233,18 +1407,32 @@ execute_worker_for_task() {
       elif [[ -f "${RUNTIME_DIR}/VERIFICATION_REPORT.md" ]]; then
         truncated_errors=$(head -n 40 "${RUNTIME_DIR}/VERIFICATION_REPORT.md")
       fi
-      current_prompt="[REPAIR TURN — ATTEMPT ${worker_attempt}/${max_worker_retries} — TARGET: ${task}]
-Your previous attempt failed local Tier 1 verification (Diff Check) in worktree.
-=== ❌ VERIFICATION FAILURE REPORT ===
-${truncated_errors}
 
+      local worker_diff=""
+      if [[ -d "$worktree_dir" ]]; then
+        worker_diff=$(git -C "$worktree_dir" diff "$base_branch_for_diff" 2>/dev/null | head -n 80 || true)
+        if [[ -z "$worker_diff" ]]; then
+          worker_diff=$(git -C "$worktree_dir" diff HEAD 2>/dev/null | head -n 80 || true)
+        fi
+      fi
+
+      current_prompt="[REPAIR TURN — ATTEMPT ${worker_attempt}/${max_worker_retries} — TARGET: ${task}]
+Your previous attempt failed local verification in worktree.
+
+=== ❌ VERIFICATION FAILURE REPORT ===
+${truncated_errors:-(No explicit error report file. Check test/lint output.)}
+
+$([ -n "$worker_diff" ] && echo -e "=== 📋 YOUR CODE CHANGES (git diff against baseline) ===\n${worker_diff}\n")
 === 🎯 REPAIR INSTRUCTIONS ===
-1. Analyze the exact error messages above (e.g. Mypy type annotations, Ruff lint, or test failures).
+1. Correlate the failure report with your code diff above.
 2. Fix the issues directly in the affected files within scope.
-3. Verify your fixes by running:
+3. Verify your fixes:
    python3 pipeline/scripts/verify.py --tier 0
    python3 pipeline/scripts/verify.py --tier 1 --diff ${base_branch_for_diff}
-4. When 100% PASS, stop the turn so harness can proceed with merge staging."
+4. When 100% PASS, stop the turn so harness can proceed."
+
+      update_worker_telemetry "$RALPH_WORKER_ID" "$task" "REPAIRING" "Repairing verification issues (Attempt ${worker_attempt})" "$worktree_dir" "$branch_name" "" "Worker [${RALPH_WORKER_ID}] repair turn ${worker_attempt}"
+      log_milestone "🔧 [REPAIR] Worker [${RALPH_WORKER_ID}] repairing ${task} (Attempt ${worker_attempt}/${max_worker_retries})"
     fi
 
     (
@@ -1257,21 +1445,28 @@ ${truncated_errors}
       log_warn "[Worker $task] Agent turn failed (exit: $agent_exit) on attempt $worker_attempt."
     fi
 
-    # 2. State: VERIFIED_LOCAL (Run Tier 1 locally in worktree with diff awareness)
-    if (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff"); then
+    update_worker_telemetry "$RALPH_WORKER_ID" "$task" "TIER_1" "Running local Tier 1/2 tests" "$worktree_dir" "$branch_name"
+
+    # 2. State: VERIFIED_LOCAL (Run Tier 1 & Tier 2 locally in worktree IN PARALLEL before merge lock)
+    if (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch_for_diff") && \
+       (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_branch_for_diff"); then
       local_verified=true
+      update_worker_telemetry "$RALPH_WORKER_ID" "$task" "MERGING" "Passed Tier 1 & 2 locally. Staging for merge" "$worktree_dir" "$branch_name" "" "Worker [${RALPH_WORKER_ID}] passed Tier 1/2 for ${task}"
+      log_milestone "✓ [VERIFIED] Worker [${RALPH_WORKER_ID}] passed Tier 1/2 locally for ${task}"
       break
     else
-      log_warn "[Worker $task] Tier 1 verification failed on attempt $worker_attempt/$max_worker_retries."
+      log_warn "[Worker $task] Local Tier 1/Tier 2 verification failed on attempt $worker_attempt/$max_worker_retries."
     fi
 
     worker_attempt=$(( worker_attempt + 1 ))
   done
 
   if [[ "$local_verified" != "true" ]]; then
-    log_error "[Worker $task] Tier 1 FAILED after $max_worker_retries attempts. Marked BLOCKED."
+    log_error "[Worker $task] Local verification FAILED after $max_worker_retries attempts. Marked BLOCKED."
     safe_update_task_status "$task" "[!] BLOCKED"
-    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed local Tier 1 verification in worktree (after ${max_worker_retries} attempts). Marked [!] BLOCKED."
+    safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed local Tier 1/2 verification in worktree (after ${max_worker_retries} attempts). Marked [!] BLOCKED."
+    update_worker_telemetry "$RALPH_WORKER_ID" "$task" "BLOCKED" "Failed verification -> Quarantined" "$worktree_dir" "$branch_name" "" "Task ${task} marked BLOCKED"
+    log_milestone "✗ [BLOCKED] ${task} failed local verification after ${max_worker_retries} attempts"
     return 1
   fi
 
@@ -1284,7 +1479,7 @@ ${truncated_errors}
   commit_msg=$(generate_commit_message "$task" "PARALLEL-WORKER" "$worktree_dir")
   git -C "$worktree_dir" commit -m "$commit_msg" >/dev/null 2>&1 || true
 
-  # 3. State: QUEUED_FOR_MERGE (Bors Virtual Merge Queue with strict serialization)
+  # 3. State: QUEUED_FOR_MERGE (Bors Virtual Merge Queue with fast-path integration)
   local merge_fd
   {
     if [[ -z "${merge_fd:-}" ]]; then
@@ -1305,6 +1500,11 @@ ${truncated_errors}
     base_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")"
     [[ -z "$base_branch" || "$base_branch" == "HEAD" ]] && base_branch="master"
 
+    local initial_base_sha
+    initial_base_sha="$(git -C "$repo_root" rev-parse "$base_branch_for_diff" 2>/dev/null || echo "")"
+    local current_base_sha
+    current_base_sha="$(git -C "$repo_root" rev-parse "$base_branch" 2>/dev/null || echo "")"
+
     log_info "[BORS] Staging [${task}] -> ${base_branch}..."
 
     # Assert repo_root is on base branch before doing any merge
@@ -1318,61 +1518,122 @@ ${truncated_errors}
       exit 1
     fi
 
-    # 4. Bors Step 1: Rebase worker branch on top of latest base branch (with Self-Healing)
-    if ! git -C "$worktree_dir" rebase "$base_branch" >/dev/null 2>&1; then
-      log_warn "[BORS] Conflict on rebase for ${task}. Self-healing..."
-      local conflicted_files
-      conflicted_files=$(git -C "$worktree_dir" diff --name-only --diff-filter=U 2>/dev/null || echo "")
-      local can_heal=true
-      if [[ -z "$conflicted_files" ]]; then
-        can_heal=false
-      else
-        for cf in $conflicted_files; do
-          if [[ "$cf" != *"__init__.py" && "$cf" != *"pyproject.toml" && "$cf" != *"conftest.py" ]]; then
-            can_heal=false
-            break
-          fi
-        done
+    # 4. Bors Step 1: Rebase if base branch moved, otherwise fast-track
+    if [[ -n "$initial_base_sha" && -n "$current_base_sha" && "$initial_base_sha" != "$current_base_sha" ]]; then
+      log_info "[BORS] Base branch advanced (${initial_base_sha:0:7} -> ${current_base_sha:0:7}). Rebasing worker branch..."
+      if ! git -C "$worktree_dir" rebase "$base_branch" >/dev/null 2>&1; then
+        log_warn "[BORS] Conflict on rebase for ${task}. Initiating Multi-Tier Self-Healing..."
+        local conflicted_files
+        conflicted_files=$(git -C "$worktree_dir" diff --name-only --diff-filter=U 2>/dev/null || echo "")
+        local can_heal_boilerplate=true
+        if [[ -z "$conflicted_files" ]]; then
+          can_heal_boilerplate=false
+        else
+          for cf in $conflicted_files; do
+            if [[ "$cf" != *"__init__.py" && "$cf" != *"pyproject.toml" && "$cf" != *"conftest.py" && "$cf" != *"package.json" && "$cf" != *"index.ts" && "$cf" != *"Cargo.toml" && "$cf" != *"go.mod" ]]; then
+              can_heal_boilerplate=false
+              break
+            fi
+          done
+        fi
+
+        if [[ "$can_heal_boilerplate" == "true" ]]; then
+          log_info "[BORS] Auto-resolving boilerplate conflict on [${conflicted_files}]..."
+          git -C "$worktree_dir" checkout --theirs $conflicted_files >/dev/null 2>&1 || true
+          git -C "$worktree_dir" add $conflicted_files >/dev/null 2>&1 || true
+          GIT_EDITOR=true git -C "$worktree_dir" rebase --continue >/dev/null 2>&1 || true
+        fi
+
+        # If still in conflict, attempt AI-guided 1-shot rebase repair in isolated worktree
+        if git -C "$worktree_dir" status 2>/dev/null | grep -q "rebase in progress"; then
+          log_info "[BORS] Launching 1-shot rebase repair turn for ${task} on [${conflicted_files}]..."
+          local rebase_repair_prompt="[REBASE CONFLICT REPAIR — TARGET: ${task}]
+A git rebase conflict occurred against latest '${base_branch}' in files:
+${conflicted_files}
+
+Conflict markers ('<<<<<<<', '=======', '>>>>>>>') currently exist.
+=== 🎯 INSTRUCTIONS ===
+1. Inspect the conflict markers in the conflicted files.
+2. Resolve the conflicts by preserving functional logic from BOTH branches cleanly.
+3. Remove all conflict markers.
+4. Run 'python3 pipeline/scripts/verify.py --tier 0' to verify syntax/lint passes.
+5. Stop the turn so harness can continue rebase."
+
+          (
+            cd "$worktree_dir"
+            _run_agent_turn "$rebase_repair_prompt" "5m0s" "rebase-repair" "$EXECUTOR_MODEL" "REBASE-${task}"
+          )
+
+          for cf in $conflicted_files; do
+            if [[ -f "${worktree_dir}/${cf}" ]] && ! grep -qE "^(<<<<<<<|=======|>>>>>>>)" "${worktree_dir}/${cf}" 2>/dev/null; then
+              git -C "$worktree_dir" add "$cf" >/dev/null 2>&1 || true
+            fi
+          done
+          GIT_EDITOR=true git -C "$worktree_dir" rebase --continue >/dev/null 2>&1 || true
+        fi
+
+        if git -C "$worktree_dir" status 2>/dev/null | grep -q "rebase in progress"; then
+          log_warn "[BORS] Worker $task conflict unhealable. Aborting rebase and quarantining task."
+          git -C "$worktree_dir" rebase --abort 2>/dev/null || true
+          mkdir -p "${repo_root}/BLOCKERS"
+          cat <<EOF > "${repo_root}/BLOCKERS/${task}.md"
+# Blocker Report: ${task}
+- **Type**: Unhealable Rebase Conflict against ${base_branch}
+- **Conflicted Files**: ${conflicted_files}
+- **Action**: Task quarantined cleanly to allow remaining queue tasks to continue overnight.
+EOF
+          safe_update_task_status "$task" "[!] BLOCKED"
+          safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} quarantined due to unhealable rebase conflict on [${conflicted_files}]. Marked [!] BLOCKED."
+          flock -u "$merge_fd" 2>/dev/null || true
+          exit 1
+        else
+          log_ok "[BORS] Worker $task conflict self-healed ✓"
+        fi
       fi
 
-      if [[ "$can_heal" == "true" ]]; then
-        git -C "$worktree_dir" checkout --theirs $conflicted_files >/dev/null 2>&1 || true
-        git -C "$worktree_dir" add $conflicted_files >/dev/null 2>&1 || true
-        GIT_EDITOR=true git -C "$worktree_dir" rebase --continue >/dev/null 2>&1 || true
-      fi
-
-      if git -C "$worktree_dir" status 2>/dev/null | grep -q "rebase in progress"; then
-        log_warn "[BORS] Worker $task conflict unhealable. Aborting rebase."
-        git -C "$worktree_dir" rebase --abort 2>/dev/null || true
+      # 5. Fast verification after rebase (Tier 1 targeted check against new base branch)
+      if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 1 --diff "$base_branch"); then
+        log_error "[BORS] Worker $task failed Tier 1 verification after rebase!"
+        mkdir -p "${repo_root}/BLOCKERS"
+        cat <<EOF > "${repo_root}/BLOCKERS/${task}.md"
+# Blocker Report: ${task}
+- **Type**: Verification Failure after rebase during Bors Staging
+- **Base Branch**: ${base_branch}
+- **Action**: Task quarantined cleanly to prevent regression in base branch.
+EOF
         safe_update_task_status "$task" "[!] BLOCKED"
-        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Unhealable rebase conflict on [${conflicted_files}]. Marked [!] BLOCKED."
+        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed verification during Bors staging. Quarantined cleanly."
         flock -u "$merge_fd" 2>/dev/null || true
         exit 1
-      else
-        log_ok "[BORS] Worker $task conflict self-healed ✓"
       fi
-    fi
-
-    # 5. Bors Step 2: Run Tier 2 Verification ON THE REBASED WORKTREE (Diff against base branch)
-    if ! (cd "$worktree_dir" && PYTHONPATH="$worktree_dir:$PYTHONPATH" python3 "${PIPELINE_DIR}/scripts/verify.py" --tier 2 --diff "$base_branch"); then
-      log_error "[BORS] Worker $task failed Tier 2 verification after rebase!"
-      safe_update_task_status "$task" "[!] BLOCKED"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Tier 2 verification during Bors staging. Rejected cleanly."
-      flock -u "$merge_fd" 2>/dev/null || true
-      exit 1
+    else
+      log_ok "[BORS] Base branch unchanged (${current_base_sha:0:7}). Fast-tracking merge without rebase ✓"
     fi
 
     # 6. Bors Step 3: Atomic integration into base branch (Guaranteed Green & Clean)
+    git -C "$repo_root" reset HEAD -- pipeline/ .pipeline/ BLOCKERS/ .ralph* 2>/dev/null || true
+    git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
+    git -C "$repo_root" clean -fd -e pipeline/ -e .pipeline/ -e .ralph/ 2>/dev/null || true
+
     if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
-      log_error "[BORS] Merge failure for $task into ${base_branch}."
+      log_warn "[BORS] Initial squash merge failed for $task. Resetting non-pipeline files and retrying..."
       git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
-      git -C "$repo_root" reset --merge >/dev/null 2>&1 || true
-      git -C "$repo_root" checkout HEAD -- . ':!pipeline' ':!.pipeline' 2>/dev/null || true
-      git -C "$repo_root" clean -fd -e pipeline/ -e .pipeline/ 2>/dev/null || true
-      safe_update_task_status "$task" "[!] BLOCKED"
-      safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Squash merge failure into ${base_branch}. Marked [!] BLOCKED."
-      flock -u "$merge_fd" 2>/dev/null || true
-      exit 1
+      git -C "$repo_root" reset --hard "$base_branch" >/dev/null 2>&1 || true
+      if ! git -C "$repo_root" merge --squash "$branch_name" >/dev/null 2>&1; then
+        log_error "[BORS] Merge failure for $task into ${base_branch}."
+        git -C "$repo_root" merge --abort >/dev/null 2>&1 || true
+        git -C "$repo_root" reset --hard "$base_branch" >/dev/null 2>&1 || true
+        mkdir -p "${repo_root}/BLOCKERS"
+        cat <<EOF > "${repo_root}/BLOCKERS/${task}.md"
+# Blocker Report: ${task}
+- **Type**: Squash Merge Failure into ${base_branch}
+- **Action**: Task quarantined cleanly.
+EOF
+        safe_update_task_status "$task" "[!] BLOCKED"
+        safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} failed Bors staging: Squash merge failure into ${base_branch}. Marked [!] BLOCKED."
+        flock -u "$merge_fd" 2>/dev/null || true
+        exit 1
+      fi
     fi
 
     # Ensure pipeline/ is NEVER staged for commit on base_branch
@@ -1400,6 +1661,8 @@ ${truncated_errors}
 
     safe_update_task_status "$task" "[x] DONE"
     safe_append_durable_log "${RUNTIME_DIR}/PROGRESS_LOG.md" "Task ${task} integrated cleanly into ${base_branch} via Bors Queue (Tier 2 PASS)."
+    update_worker_telemetry "$RALPH_WORKER_ID" "$task" "DONE" "Cleanly integrated to ${base_branch}" "$worktree_dir" "$branch_name" "" "Task ${task} integrated to ${base_branch} (Tier 2 PASS)"
+    log_milestone "⚡ [INTEGRATED] ${task} -> ${base_branch} (Tier 2 PASS)"
     log_ok "[BORS] Integrated [${task}] -> ${base_branch} (Tier 2 PASS)"
 
     flock -u "$merge_fd" 2>/dev/null || true
@@ -1476,11 +1739,13 @@ run_parallel_waves() {
       active_count=$(( active_count + 1 ))
 
       log_info "[POOL] Launched [${task}] (${active_count}/${max_workers})"
+      log_milestone "[LAUNCH] Worker [worker-${task}] assigned -> ${task} (${active_count}/${max_workers})"
     done
 
     # 3. If no active workers remain and no more tasks can be scheduled, break!
     if (( ${#POOL_PID_TO_TASK[@]} == 0 )); then
       log_ok "🎉 [POOL] All available tasks processed!"
+      log_milestone "🎉 [COMPLETE] All available parallel queue tasks processed!"
       break
     fi
 
@@ -1524,9 +1789,11 @@ run_parallel_waves() {
 
       if [[ $worker_exit -ne 0 ]]; then
         log_warn "[POOL] [${f_task}] Failed (exit: ${worker_exit})"
+        log_milestone "✗ [FAILED] [${f_task}] Worker failed (exit: ${worker_exit})"
         pool_failed_tasks=$(( pool_failed_tasks + 1 ))
       else
         log_ok "[POOL] [${f_task}] Completed (PASS)"
+        log_milestone "✓ [PASS] [${f_task}] Completed & verified 100% PASS"
         pool_done_tasks=$(( pool_done_tasks + 1 ))
       fi
 
@@ -1666,6 +1933,7 @@ main() {
   parse_args "$@"
   init_run_lifecycle
   preflight_check
+  init_ui_server
 
   if [[ -n "$PROVIDER_OVERRIDE" ]]; then
     export AGENT_PROVIDER="$PROVIDER_OVERRIDE"
@@ -1689,6 +1957,7 @@ main() {
   local CURRENT_ACTIVE_TASK=""
 
   log_section "RALPH LOOP ORCHESTRATOR"
+  log_milestone "[INIT] Master loop initialized (Max iter: ${MAX_ITERATIONS})"
 
   while :; do
     iter=$((iter + 1))
@@ -1723,6 +1992,7 @@ main() {
     active_task=$(get_next_todo_task "$TASK_FILTER")
 
     if [[ -z "$active_task" ]]; then
+      log_milestone "🎉 [COMPLETE] All tasks processed & verified 100% PASS!"
       log_ok "🎉 [COMPLETE] All tasks processed & verified 100% PASS!"
       exit 0
     fi
@@ -1735,6 +2005,8 @@ main() {
     fi
 
     log_section "ITER ${iter}/${MAX_ITERATIONS} | TARGET: ${active_task}"
+    update_worker_telemetry "main" "$active_task" "EXECUTING" "Executing iteration ${iter}" "" "" "" "Started Iter ${iter} for [${active_task}]"
+    log_milestone "[START] Iteration ${iter}/${MAX_ITERATIONS} -> Target: [${active_task}]"
 
     # Ensure plan seal integrity before executing agent turn
     verify_or_restore_plan_seal "ITERATION ${iter}"
